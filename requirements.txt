@@ -1,0 +1,31 @@
+PySide6>=6.5
+google-genai>=0.3.0
+groq>=0.9.0
+mistralai>=1.0.0
+pyttsx3>=2.90
+piper-tts>=1.8.0
+SpeechRecognition>=3.10.0
+PyAudio>=0.2.14; python_version < "3.13"
+PyAudioWPatch>=0.2.12.7; python_version >= "3.13"
+faster-whisper>=1.0.0
+numpy>=1.24
+# Real, vetted encryption (Fernet/AES) for memory.py's on-disk memory
+# folder -- not hand-rolled crypto.
+cryptography>=41.0
+tavily-python>=0.5.0
+# Used directly by settings_checks.py's check_generic_http -- the best-
+# effort reachability check for a custom/unintegrated AI provider added
+# through the Settings panel's "+ Add Model" button. Already pulled in
+# transitively by several packages above, but declared explicitly since
+# code here imports it by name.
+requests>=2.28
+google-api-python-client>=2.100.0
+google-auth-httplib2>=0.2.0
+google-auth-oauthlib>=1.2.0
+# Optional, Windows-only: lets type_in_app() actually type live into an
+# already-open Notepad window Friday opened via open_app(). Everything
+# else in app_panels.py (open/minimize/restore/close real apps) works
+# fine without this -- it's only needed for that one best-effort,
+# "type more text into something already open" feature; its absence is
+# detected and reported plainly rather than failing silently.
+pywinauto>=0.6.8; sys_platform == "win32"
