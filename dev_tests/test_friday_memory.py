@@ -846,6 +846,119 @@ def part_d():
     memory._FERNET = None
     memory._FERNET_DIR = None
 
+    # 14. _write_bytes_with_retry: succeeds on the first try -> no
+    #     sleeping, no repair attempted. This is the write-side
+    #     counterpart to check 9 above -- added after a real-machine
+    #     report of the Settings panel crashing with
+    #     "[Errno 13] Permission denied: '...\\ai_models.json.enc'"
+    #     because _write_encrypted used to be a bare
+    #     `open(path, "wb")` with none of the retry/repair logic the
+    #     read side already had.
+    write_path = os.path.join(tempfile.mkdtemp(), "settings.json.enc")
+    with mock.patch("time.sleep") as fake_sleep:
+        memory._write_bytes_with_retry(write_path, b"first-write")
+    check("retry-write returns normally on the first-try path",
+          open(write_path, "rb").read() == b"first-write")
+    check("retry-write never sleeps when the very first write already works",
+          fake_sleep.call_count == 0)
+
+    # 15. _write_bytes_with_retry: transient PermissionError that
+    #     clears after a couple of attempts (the realistic AV/OneDrive
+    #     lock case right after a file is touched) -> retries quietly
+    #     and the content really lands on disk, without ever invoking
+    #     the heavier ACL repair path.
+    attempts_made = {"n": 0}
+
+    def flaky_write_open(path, mode="r", *a, **kw):
+        if path == write_path and mode == "wb":
+            attempts_made["n"] += 1
+            if attempts_made["n"] < 3:
+                raise PermissionError("transient lock")
+        return real_open(path, mode, *a, **kw)
+
+    with mock.patch("builtins.open", side_effect=flaky_write_open), \
+         mock.patch("time.sleep") as fake_sleep, \
+         mock.patch.object(memory, "_repair_windows_permissions") as fake_repair:
+        memory._write_bytes_with_retry(write_path, b"second-write")
+    check("retry-write recovers from a transient PermissionError without repair",
+          open(write_path, "rb").read() == b"second-write"
+          and fake_repair.call_count == 0)
+    check("retry-write actually waited between attempts", fake_sleep.call_count >= 1)
+
+    # 16. _write_bytes_with_retry: every plain retry fails, but the
+    #     file already exists and ACL repair fixes it -> succeeds
+    #     anyway instead of raising, the exact scenario of an existing
+    #     settings/memory file stuck in a broken permission state from
+    #     an earlier run.
+    def always_fails_write_open(path, mode="r", *a, **kw):
+        if path == write_path and mode == "wb":
+            raise PermissionError(13, "Permission denied")
+        return real_open(path, mode, *a, **kw)
+
+    def fake_repair_fixes_it(path):
+        # Simulate the repair call itself "fixing" things by letting
+        # the *next* open through -- swap in a open that now succeeds.
+        nonlocal_state["repaired"] = True
+        return True
+
+    nonlocal_state = {"repaired": False}
+
+    def open_after_repair(path, mode="r", *a, **kw):
+        if path == write_path and mode == "wb" and not nonlocal_state["repaired"]:
+            raise PermissionError(13, "Permission denied")
+        return real_open(path, mode, *a, **kw)
+
+    with mock.patch("builtins.open", side_effect=open_after_repair), \
+         mock.patch("time.sleep"), \
+         mock.patch.object(memory, "_repair_windows_permissions",
+                            side_effect=fake_repair_fixes_it) as fake_repair:
+        memory._write_bytes_with_retry(write_path, b"third-write", attempts=2, delay=0)
+    check("retry-write heals a stuck ACL via repair instead of raising",
+          open(write_path, "rb").read() == b"third-write" and fake_repair.called)
+
+    # 17. _write_bytes_with_retry: never clears, repair also fails ->
+    #     raises PermissionError with a clear, actionable message
+    #     (mentions another running copy of Friday AND Windows
+    #     Controlled Folder Access) instead of a bare errno-13 crash
+    #     like the one reported from the Settings panel.
+    raised = None
+    with mock.patch("builtins.open", side_effect=always_fails_write_open), \
+         mock.patch("time.sleep"), \
+         mock.patch.object(memory, "_repair_windows_permissions", return_value=False):
+        try:
+            memory._write_bytes_with_retry(write_path, b"never-lands", attempts=2, delay=0)
+        except PermissionError as exc:
+            raised = exc
+    check("retry-write raises PermissionError (not a silent no-op) when truly unrecoverable",
+          raised is not None)
+    check("the raised write error mentions another running copy of Friday",
+          raised is not None and "another copy of Friday" in str(raised))
+    check("the raised write error mentions Controlled Folder Access",
+          raised is not None and "Controlled Folder Access" in str(raised))
+
+    # 18. _write_encrypted (the real settings_store.save()/memory.py
+    #     code path, not just the raw-bytes helper) still ends up with
+    #     correct, decryptable content on disk after a transient lock
+    #     that clears -- an end-to-end check that the fix is actually
+    #     wired into the function every save() call goes through.
+    memory.set_memory_dir(os.path.join(tempfile.mkdtemp(), "friday_memory2"))
+    enc_path = os.path.join(memory._ensure_folder("settings"), "ai_models.json.enc")
+    attempts_made2 = {"n": 0}
+
+    def flaky_enc_open(path, mode="r", *a, **kw):
+        if path == enc_path and mode == "wb":
+            attempts_made2["n"] += 1
+            if attempts_made2["n"] < 2:
+                raise PermissionError("transient lock")
+        return real_open(path, mode, *a, **kw)
+
+    with mock.patch("builtins.open", side_effect=flaky_enc_open), \
+         mock.patch("time.sleep"):
+        memory._write_encrypted(enc_path, {"Voice": ["demo"]})
+    check("_write_encrypted survives a transient lock and writes real, decryptable content",
+          memory._read_encrypted(enc_path) == {"Voice": ["demo"]})
+    memory.close()
+
 
 def main():
     part_a()

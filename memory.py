@@ -415,8 +415,53 @@ def _decrypt_obj(blob):
 
 def _write_encrypted(path, obj):
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "wb") as f:
-        f.write(_encrypt_obj(obj))
+    _write_bytes_with_retry(path, _encrypt_obj(obj))
+
+
+def _write_bytes_with_retry(path, blob, attempts=5, delay=0.2):
+    """Writes `blob` to `path`, retrying through a brief, growing backoff
+    if the file is transiently unwritable -- the write-side counterpart
+    to `_open_readable_with_retry` above, for the same real-world cause
+    (Windows antivirus/indexing/cloud-sync briefly holding a lock on a
+    file right after it's touched). If every retry still fails with a
+    permissions error specifically, makes one last attempt at an actual
+    ACL repair (_repair_windows_permissions) -- relevant when `path`
+    already exists from a previous run and ended up in a broken ACL
+    state -- before giving up for good. Raises the original
+    PermissionError, with a clearer and actionable message appended, if
+    nothing works -- a save failure here is too important to silently
+    swallow (previously this used a bare `open(path, "wb")`, so any
+    transient lock or stuck ACL on an *existing* settings/memory file
+    surfaced as a raw, unexplained traceback instead of either healing
+    itself or telling the user what to actually do about it).
+    """
+    last_exc = None
+    for i in range(attempts):
+        try:
+            with open(path, "wb") as f:
+                f.write(blob)
+            return
+        except PermissionError as exc:
+            last_exc = exc
+            if i < attempts - 1:
+                time.sleep(delay * (i + 1))
+    if os.path.exists(path) and _repair_windows_permissions(path):
+        try:
+            with open(path, "wb") as f:
+                f.write(blob)
+            return
+        except PermissionError as exc:
+            last_exc = exc
+    raise PermissionError(
+        f"{last_exc}. Friday couldn't save {path} because Windows denied "
+        "write access. This is usually either (a) another copy of Friday "
+        "already running and holding this file open -- close every other "
+        "Friday window/terminal, then try again, or (b) Windows Defender's "
+        "Controlled Folder Access blocking Python from writing under your "
+        "user folder -- allow python.exe in Windows Security > Virus & "
+        "threat protection > Manage ransomware protection > Controlled "
+        "folder access, or turn it off there temporarily."
+    ) from last_exc
 
 
 def _read_encrypted(path):

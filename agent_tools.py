@@ -1190,7 +1190,7 @@ def open_app(name: str, url: str = "", content: str = "") -> str:
 
     Settings is also Friday's own fully built-in panel (same mechanism
     as Notepad, no real OS process at all) — it lists every AI model/API
-    key Friday knows about, grouped by faculty (Thinking, Reasoning,
+    key Friday knows about, grouped by faculty (Thinking, Review,
     Coding, Image Generation, Audio Generation, Video Generation,
     Research, Embedding, Text Generation, Transcription), with keys
     shown masked and a real, live connectivity check (green check / red
@@ -1225,12 +1225,24 @@ def open_app(name: str, url: str = "", content: str = "") -> str:
     window instead, still trackable/minimizable/closeable (hybrid real
     OS-minimize + custom pill), just not drawn inside a Friday panel.
 
+    Chat, Profile, Image Generation, and Video Generation are four more
+    fully built-in panels (same no-real-process mechanism as Notepad/
+    Settings) -- each one is an empty surface with a bottom input bar
+    (an attach-file button, a text box, and mic/speaker buttons).
+    They're deliberately just the UI shell for now: typing and pressing
+    Enter clears the box rather than faking a reply, and Image/Video
+    Generation say plainly in-panel that there's no real generation
+    model wired up yet (matching Settings' own honest labeling for
+    those two faculties) — don't claim to have generated or replied
+    with anything through these yet.
+
     Call this for "open chrome"/"open notepad"/"open the calculator"/
-    "open settings" — this really opens the real thing (or, for Notepad
-    and Settings, Friday's own real built-in panel), it does not
-    simulate it inside the IDE. Use ide_open_folder/ide_create_file etc.
-    instead for anything that's actually about writing/running code in
-    the IDE.
+    "open settings"/"open chat"/"open my profile"/"open image
+    generation"/"open video generation" — this really opens the real
+    thing (or, for Notepad/Settings/Chat/Profile/Image Generation/Video
+    Generation, Friday's own real built-in panel), it does not simulate
+    it inside the IDE. Use ide_open_folder/ide_create_file etc. instead
+    for anything that's actually about writing/running code in the IDE.
 
     Friday only ever shows one single panel on screen at a time. A
     freshly-opened panel always takes that one slot — full screen,
@@ -3434,6 +3446,42 @@ def ide_git_checkout(branch: str, create: bool = False) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Act Script -- Friday's heavier multi-model orchestration system
+# ---------------------------------------------------------------------------
+
+def ide_run_act_script(task_description: str, mode: str = "auto") -> str:
+    """Runs Friday's ACT Script system on a task that's too deep for a single model call (Agent Mode must be on).
+
+    Use this for: dependent multi-step builds/refactors/migrations where
+    each step's real output must exist before the next can safely start
+    (routes to Sequential Rotation); breadth/research questions or
+    debugging hypotheses that benefit from several independent takes
+    merged into one (routes to Fan-Out); or whole-artifact writing
+    (reports, strategy docs) that benefits from drafting, cold critique,
+    and revision before it ships (routes to Debate). It rotates Friday's
+    real providers (Gemini/Groq/Mistral) against each other so whichever
+    model reviews/critiques/judges a piece of work always differs from
+    whichever model produced it. This can take a while -- several real
+    model calls happen underneath -- so only reach for it when a task
+    actually warrants that, not for simple questions or one-line edits.
+
+    Args:
+        task_description: The task, in full -- the same level of detail
+            you'd want a careful coworker to have before starting.
+        mode: "auto" (default -- classifies the task itself and picks
+            the right pipeline), or force one of "sequential", "fan_out",
+            "debate" directly.
+    """
+    if not is_agent_mode_on():
+        return "Agent Mode / the IDE isn't open right now."
+    try:
+        import act_script
+        return act_script.run_act_script(task_description, mode=mode)
+    except Exception as exc:  # noqa: BLE001
+        return f"Act Script error: {exc}"
+
+
+# ---------------------------------------------------------------------------
 # Clock
 # ---------------------------------------------------------------------------
 
@@ -3492,6 +3540,34 @@ def web_search(query: str) -> str:
     if not lines:
         return "No results found."
     return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Real browser automation (Playwright) -- navigate, click, fill forms,
+# read rendered content/console output. See browser_tools.py's own module
+# docstring for the full design (especially the dedicated-thread Playwright
+# bridge, same shape as _TkThreadBridge above). General-purpose, not
+# ide_* scoped -- registered the same unrestricted way web_search already
+# is, available from both the floating circle and the IDE's embedded chat
+# panel.
+# ---------------------------------------------------------------------------
+from browser_tools import (  # noqa: E402
+    browser_navigate,
+    browser_click,
+    browser_fill,
+    browser_select_option,
+    browser_press_key,
+    browser_wait_for,
+    browser_read_text,
+    browser_get_html,
+    browser_get_links,
+    browser_evaluate,
+    browser_get_console_logs,
+    browser_screenshot,
+    browser_go_back,
+    browser_current_state,
+    browser_close,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -3819,6 +3895,21 @@ def delete_task(which: str) -> str:
 
 GEMINI_TOOLS = [
     web_search,
+    browser_navigate,
+    browser_click,
+    browser_fill,
+    browser_select_option,
+    browser_press_key,
+    browser_wait_for,
+    browser_read_text,
+    browser_get_html,
+    browser_get_links,
+    browser_evaluate,
+    browser_get_console_logs,
+    browser_screenshot,
+    browser_go_back,
+    browser_current_state,
+    browser_close,
     get_current_datetime,
     read_file,
     write_file,
@@ -3906,6 +3997,7 @@ GEMINI_TOOLS = [
     ide_git_pull,
     ide_git_branch,
     ide_git_checkout,
+    ide_run_act_script,
 ]
 
 
@@ -3923,6 +4015,21 @@ from tool_schemas import TOOL_SCHEMAS  # noqa: E402
 
 TOOL_FUNCTIONS = {
     "web_search": web_search,
+    "browser_navigate": browser_navigate,
+    "browser_click": browser_click,
+    "browser_fill": browser_fill,
+    "browser_select_option": browser_select_option,
+    "browser_press_key": browser_press_key,
+    "browser_wait_for": browser_wait_for,
+    "browser_read_text": browser_read_text,
+    "browser_get_html": browser_get_html,
+    "browser_get_links": browser_get_links,
+    "browser_evaluate": browser_evaluate,
+    "browser_get_console_logs": browser_get_console_logs,
+    "browser_screenshot": browser_screenshot,
+    "browser_go_back": browser_go_back,
+    "browser_current_state": browser_current_state,
+    "browser_close": browser_close,
     "get_current_datetime": get_current_datetime,
     "read_file": read_file,
     "write_file": write_file,
@@ -4010,6 +4117,7 @@ TOOL_FUNCTIONS = {
     "ide_git_pull": ide_git_pull,
     "ide_git_branch": ide_git_branch,
     "ide_git_checkout": ide_git_checkout,
+    "ide_run_act_script": ide_run_act_script,
 }
 
 # The IDE-specific tools only make sense — and are only worth the extra
@@ -4084,6 +4192,7 @@ _AGENT_MODE_ONLY_TOOLS = {
     "ide_git_pull",
     "ide_git_branch",
     "ide_git_checkout",
+    "ide_run_act_script",
 }
 
 

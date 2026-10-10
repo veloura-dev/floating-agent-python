@@ -98,7 +98,7 @@ def main():
     # 1. Baseline: agent mode starts off, only the 17 always-on tools show up.
     check("agent mode starts off", not at.is_agent_mode_on())
     active = {f.__name__ for f in at.get_active_gemini_tools()}
-    check("24 tools active while off (17 original + 7 new memory/task tools)", len(active) == 24)
+    check("39 tools active while off (17 original + 7 new memory/task tools + 15 new general-purpose browser_* tools)", len(active) == 39)
     check("agent_mode_on always available", "agent_mode_on" in active)
     check("ide_create_file hidden while off", "ide_create_file" not in active)
     check("ide_analyze_file_for_deletion hidden while off",
@@ -122,10 +122,11 @@ def main():
     time.sleep(0.1)
 
     active_on = {f.__name__ for f in at.get_active_gemini_tools()}
-    check("88 tools active while on (64 original + 12 new IDE tools + 7 new "
+    check("104 tools active while on (64 original + 12 new IDE tools + 7 new "
           "memory/task tools + 2 new frontend-skill tools + 3 new Build "
-          "Protocol tools -- backend/storage skill fetch + build-status)",
-          len(active_on) == 88)
+          "Protocol tools -- backend/storage skill fetch + build-status + "
+          "15 new general-purpose browser_* tools + 1 new ide_run_act_script tool)",
+          len(active_on) == 104)
     check("ide_create_file visible while on", "ide_create_file" in active_on)
     check("ide_git_commit visible while on", "ide_git_commit" in active_on)
     check("ide_analyze_file_for_deletion visible while on",
@@ -852,7 +853,7 @@ def main():
     check("_ide_app is None again", at._ide_app is None)
     check("get_ide_pid() is None again", at.get_ide_pid() is None)
     active_after = {f.__name__ for f in at.get_active_gemini_tools()}
-    check("back to 24 tools after closing (17 original + 7 new memory/task tools)", len(active_after) == 24)
+    check("back to 39 tools after closing (17 original + 7 new memory/task tools + 15 new general-purpose browser_* tools)", len(active_after) == 39)
 
     n_fail = sum(1 for _, ok in CHECKS if not ok)
     print(f"\n{len(CHECKS) - n_fail}/{len(CHECKS)} checks passed")

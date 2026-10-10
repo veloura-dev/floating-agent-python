@@ -4,6 +4,15 @@ Research, Transcription, ...), with a live green-check/red-x connection
 status per model and an "+ Add Model" button per faculty for adding a
 brand-new provider Friday didn't already know about.
 
+Each faculty is a real region of Friday's Brain: Voice feeds the
+floating circle's own lightweight chat chain, and
+Thinking/Planning/Review/Coding/Text Generation each feed the
+matching region of Act Script (the IDE's compulsory Sequential
+Rotation/Fan-Out/Debate engine -- see act_script.py). Adding a model
+under one of those gives that specific region a genuinely bigger,
+independent rotation pool -- real extra quota/rate-limit headroom
+exactly where it's added, not just bookkeeping.
+
 Split out into its own file for the same reason notepad_panel.py is its
 own file rather than living in app_panels.py (see that file's own
 docstring): it's a fully native tk.Toplevel panel, conceptually distinct
@@ -16,13 +25,15 @@ duplicates.
 Data lives in settings_store.py (encrypted on disk, same mechanism as
 the rest of Friday's memory) and every green-check status shown here
 comes from a real, on-demand backend call in settings_checks.py -- never
-just "a key string is non-empty". Per the user's own framing for this
-feature, this panel is deliberately *just* a UI over that roster right
-now: most faculties here (Reasoning, Coding, Image/Video Generation, Text
-Generation) have no real integration in agent_tools.py/agent_overlay.py
-yet, so entries added under them are pure bookkeeping until that catches
-up -- this panel is honest about that in the small print under each such
-section rather than pretending otherwise.
+just "a key string is non-empty". Voice, Thinking, Planning, Review,
+Coding, and Text Generation are all real regions today (see
+act_script.py's ROLE_FACULTY and agent_overlay.py's AIWorker) -- a model
+added under any of them is a genuine extra one Friday can and will call
+there. Image Generation and Video Generation still have no real
+generation call wiring anywhere in the codebase, so entries added under
+those two remain pure bookkeeping for now -- this panel is honest about
+that in the small print under those two sections rather than pretending
+otherwise.
 """
 import os
 import sys
@@ -49,10 +60,11 @@ _ActiveGlowAnimator = _ide_module._ActiveGlowAnimator
 # Faculties with no real backend integration yet (see module docstring)
 # -- shown with a small honest caption under their header instead of
 # silently pretending an added model there actually does something
-# today.
+# today. Review/Coding/Text Generation/Planning/Voice all moved out
+# of this set once act_script.py/agent_overlay.py started reading their
+# pools for real.
 _SCAFFOLD_ONLY_FACULTIES = {
-    "Reasoning", "Coding", "Image Generation", "Video Generation",
-    "Text Generation",
+    "Image Generation", "Video Generation",
 }
 
 _STATUS_STYLE = {

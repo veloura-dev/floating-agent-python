@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Friday Panels — HTML/CSS/JS UI Preview</title>
+<style>
+  :root {
+    --bg: #161616;
+    --panel: #1e1e1e;
+    --tabbar: #242424;
+    --input: #2a2a2a;
+    --border: #3a3a3a;
+    --fg: #f0f0f0;
+    --fg-dim: #a8a8a8;
+    --fg-faint: #6b6b6b;
+    --accent: #6ea8fe;
+    --accent-glow: rgba(110, 168, 254, 0.45);
+    --danger: #e5484d;
+    --success: #34c38f;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background: radial-gradient(circle at 20% 20%, #202020, #0e0e0e 70%);
+    font-family: "Segoe UI", system-ui, sans-serif;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 28px;
+    padding: 36px;
+    align-items: flex-start;
+  }
+  h1.title-banner {
+    width: 100%;
+    color: var(--fg);
+    font-weight: 600;
+    font-size: 15px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--fg-dim);
+    margin: 0 0 4px 4px;
+  }
+  .panel {
+    width: 300px;
+    height: 420px;
+    background: var(--panel);
+    border-radius: 14px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.55), 0 0 0 1px var(--border);
+    transition: box-shadow .25s ease, transform .25s ease;
+  }
+  .panel:hover {
+    box-shadow: 0 14px 40px rgba(0,0,0,0.65), 0 0 0 1px var(--accent);
+    transform: translateY(-3px);
+  }
+  .titlebar {
+    background: linear-gradient(180deg, #2b2b2b, #212121);
+    padding: 10px 14px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    cursor: default;
+    border-bottom: 1px solid var(--border);
+  }
+  .titlebar .name {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--fg);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .titlebar .name .dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 6px var(--accent-glow);
+  }
+  .titlebar .btns { display: flex; gap: 6px; }
+  .titlebar .btns button {
+    width: 22px; height: 22px;
+    border: none; border-radius: 6px;
+    background: transparent;
+    color: var(--fg-dim);
+    cursor: pointer;
+    font-size: 12px;
+    display: flex; align-items: center; justify-content: center;
+    transition: background .15s, color .15s;
+  }
+  .titlebar .btns button.close:hover { background: var(--danger); color: #fff; }
+  .titlebar .btns button.min:hover { background: #3a3a3a; color: var(--fg); }
+
+  .body {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    color: var(--fg-faint);
+    font-size: 12.5px;
+    padding: 18px;
+    gap: 10px;
+    line-height: 1.5;
+  }
+  .avatar {
+    width: 58px; height: 58px; border-radius: 50%;
+    background: linear-gradient(145deg, #3a3a3a, #2a2a2a);
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: inset 0 0 0 1px var(--border);
+    margin-bottom: 6px;
+  }
+  .avatar svg { width: 30px; height: 30px; fill: var(--fg-dim); }
+  .you-label { color: var(--fg); font-weight: 600; font-size: 13px; margin-top: -4px; }
+
+  .chip {
+    position: absolute;
+    margin: -56px 0 0 14px;
+    background: var(--input);
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    padding: 4px 8px;
+    font-size: 11px;
+    color: var(--fg-dim);
+    display: none;
+    align-items: center;
+    gap: 6px;
+  }
+  .chip.show { display: inline-flex; }
+  .chip button {
+    background: none; border: none; color: var(--fg-faint);
+    cursor: pointer; font-size: 11px;
+  }
+
+  .input-bar-wrap { padding: 0 14px 16px; position: relative; }
+  .input-bar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--input);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 6px 8px;
+    transition: border-color .2s, box-shadow .2s;
+  }
+  .input-bar:focus-within {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-glow);
+  }
+  .icon-btn {
+    width: 30px; height: 30px;
+    border-radius: 8px;
+    border: none;
+    background: transparent;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: background .15s, transform .1s;
+  }
+  .icon-btn:hover { background: #3a3a3a; }
+  .icon-btn:active { transform: scale(0.92); }
+  .icon-btn.active { background: var(--accent); }
+  .icon-btn svg { width: 16px; height: 16px; stroke: var(--fg-dim); fill: none; stroke-width: 1.8; }
+  .icon-btn.active svg { stroke: #fff; }
+
+  .input-bar input {
+    flex: 1;
+    min-width: 0;
+    background: transparent;
+    border: none;
+    outline: none;
+    color: var(--fg);
+    font-size: 13px;
+    font-family: inherit;
+    padding: 6px 4px;
+  }
+  .input-bar input::placeholder { color: var(--fg-faint); }
+
+  .note {
+    width: 100%;
+    color: var(--fg-faint);
+    font-size: 12px;
+    margin: 6px 4px 0;
+    line-height: 1.6;
+    max-width: 900px;
+  }
+  .note b { color: var(--fg-dim); }
+</style>
+</head>
+<body>
+
+<h1 class="title-banner">HTML / CSS / JS concept — same 4 panels, upgraded UI</h1>
+
+<div class="panel" id="panel-chat">
+  <div class="titlebar">
+    <div class="name"><span class="dot"></span>Chat</div>
+    <div class="btns"><button class="min">&#9472;</button><button class="close">&#10005;</button></div>
+  </div>
+  <div class="body">No messages yet — start typing below.</div>
+  <div class="input-bar-wrap">
+    <div class="chip" id="chip-chat"><span>📄 example.png</span><button onclick="clearChip('chat')">✕</button></div>
+    <div class="input-bar">
+      <button class="icon-btn" title="Attach a file" onclick="attach('chat')">
+        <svg viewBox="0 0 24 24"><path d="M21.44 11.05 12.25 20.24a5.5 5.5 0 0 1-7.78-7.78l9.19-9.19a3.67 3.67 0 0 1 5.19 5.19l-9.2 9.19a1.83 1.83 0 0 1-2.59-2.59l8.49-8.48"/></svg>
+      </button>
+      <input type="text" placeholder="Type a message..." />
+      <button class="icon-btn" id="mic-chat" title="Voice input" onclick="toggle('mic-chat')">
+        <svg viewBox="0 0 24 24"><path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3Z"/><path d="M19 11a7 7 0 0 1-14 0"/><path d="M12 18v4"/><path d="M8 22h8"/></svg>
+      </button>
+      <button class="icon-btn" id="spk-chat" title="Read replies aloud" onclick="toggle('spk-chat')">
+        <svg viewBox="0 0 24 24"><path d="M4 9v6h4l5 5V4L8 9H4Z"/><path d="M16.5 8.5a5 5 0 0 1 0 7"/><path d="M19 6a9 9 0 0 1 0 12"/></svg>
+      </button>
+    </div>
+  </div>
+</div>
+
+<div class="panel" id="panel-profile">
+  <div class="titlebar">
+    <div class="name"><span class="dot"></span>Profile</div>
+    <div class="btns"><button class="min">&#9472;</button><button class="close">&#10005;</button></div>
+  </div>
+  <div class="body">
+    <div class="avatar"><svg viewBox="0 0 24 24"><path d="M12 12a5 5 0 1 0 0-10 5 5 0 0 0 0 10Zm0 2c-5 0-9 2.5-9 6v2h18v-2c0-3.5-4-6-9-6Z"/></svg></div>
+    <div class="you-label">You</div>
+    No profile info yet.
+  </div>
+  <div class="input-bar-wrap">
+    <div class="chip" id="chip-profile"><span>📄 example.png</span><button onclick="clearChip('profile')">✕</button></div>
+    <div class="input-bar">
+      <button class="icon-btn" title="Attach a file" onclick="attach('profile')">
+        <svg viewBox="0 0 24 24"><path d="M21.44 11.05 12.25 20.24a5.5 5.5 0 0 1-7.78-7.78l9.19-9.19a3.67 3.67 0 0 1 5.19 5.19l-9.2 9.19a1.83 1.83 0 0 1-2.59-2.59l8.49-8.48"/></svg>
+      </button>
+      <input type="text" placeholder="Tell Friday something about yourself..." />
+      <button class="icon-btn" id="mic-profile" title="Voice input" onclick="toggle('mic-profile')">
+        <svg viewBox="0 0 24 24"><path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3Z"/><path d="M19 11a7 7 0 0 1-14 0"/><path d="M12 18v4"/><path d="M8 22h8"/></svg>
+      </button>
+      <button class="icon-btn" id="spk-profile" title="Read replies aloud" onclick="toggle('spk-profile')">
+        <svg viewBox="0 0 24 24"><path d="M4 9v6h4l5 5V4L8 9H4Z"/><path d="M16.5 8.5a5 5 0 0 1 0 7"/><path d="M19 6a9 9 0 0 1 0 12"/></svg>
+      </button>
+    </div>
+  </div>
+</div>
+
+<div class="panel" id="panel-image">
+  <div class="titlebar">
+    <div class="name"><span class="dot"></span>Image Generation</div>
+    <div class="btns"><button class="min">&#9472;</button><button class="close">&#10005;</button></div>
+  </div>
+  <div class="body">Describe the image you want below.<br>(Image generation isn't wired up to a real model yet.)</div>
+  <div class="input-bar-wrap">
+    <div class="chip" id="chip-image"><span>📄 example.png</span><button onclick="clearChip('image')">✕</button></div>
+    <div class="input-bar">
+      <button class="icon-btn" title="Attach a file" onclick="attach('image')">
+        <svg viewBox="0 0 24 24"><path d="M21.44 11.05 12.25 20.24a5.5 5.5 0 0 1-7.78-7.78l9.19-9.19a3.67 3.67 0 0 1 5.19 5.19l-9.2 9.19a1.83 1.83 0 0 1-2.59-2.59l8.49-8.48"/></svg>
+      </button>
+      <input type="text" placeholder="Describe the image you want to generate..." />
+      <button class="icon-btn" id="mic-image" title="Voice input" onclick="toggle('mic-image')">
+        <svg viewBox="0 0 24 24"><path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3Z"/><path d="M19 11a7 7 0 0 1-14 0"/><path d="M12 18v4"/><path d="M8 22h8"/></svg>
+      </button>
+      <button class="icon-btn" id="spk-image" title="Read replies aloud" onclick="toggle('spk-image')">
+        <svg viewBox="0 0 24 24"><path d="M4 9v6h4l5 5V4L8 9H4Z"/><path d="M16.5 8.5a5 5 0 0 1 0 7"/><path d="M19 6a9 9 0 0 1 0 12"/></svg>
+      </button>
+    </div>
+  </div>
+</div>
+
+<div class="panel" id="panel-video">
+  <div class="titlebar">
+    <div class="name"><span class="dot"></span>Video Generation</div>
+    <div class="btns"><button class="min">&#9472;</button><button class="close">&#10005;</button></div>
+  </div>
+  <div class="body">Describe the video you want below.<br>(Video generation isn't wired up to a real model yet.)</div>
+  <div class="input-bar-wrap">
+    <div class="chip" id="chip-video"><span>📄 example.png</span><button onclick="clearChip('video')">✕</button></div>
+    <div class="input-bar">
+      <button class="icon-btn" title="Attach a file" onclick="attach('video')">
+        <svg viewBox="0 0 24 24"><path d="M21.44 11.05 12.25 20.24a5.5 5.5 0 0 1-7.78-7.78l9.19-9.19a3.67 3.67 0 0 1 5.19 5.19l-9.2 9.19a1.83 1.83 0 0 1-2.59-2.59l8.49-8.48"/></svg>
+      </button>
+      <input type="text" placeholder="Describe the video you want to generate..." />
+      <button class="icon-btn" id="mic-video" title="Voice input" onclick="toggle('mic-video')">
+        <svg viewBox="0 0 24 24"><path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3Z"/><path d="M19 11a7 7 0 0 1-14 0"/><path d="M12 18v4"/><path d="M8 22h8"/></svg>
+      </button>
+      <button class="icon-btn" id="spk-video" title="Read replies aloud" onclick="toggle('spk-video')">
+        <svg viewBox="0 0 24 24"><path d="M4 9v6h4l5 5V4L8 9H4Z"/><path d="M16.5 8.5a5 5 0 0 1 0 7"/><path d="M19 6a9 9 0 0 1 0 12"/></svg>
+      </button>
+    </div>
+  </div>
+</div>
+
+<p class="note">
+  This is a <b>live, clickable</b> HTML/CSS/JS mockup — hover a panel, click the mic/speaker icons (they toggle blue,
+  just like the real app's cosmetic active-state), or click the attach icon to see the file chip appear. This is what
+  the 4 panels could look like if their content were rendered with real web tech instead of hand-drawn Tkinter Canvas icons.
+</p>
+
+<script>
+  function toggle(id) {
+    document.getElementById(id).classList.toggle('active');
+  }
+  function attach(key) {
+    document.getElementById('chip-' + key).classList.add('show');
+  }
+  function clearChip(key) {
+    document.getElementById('chip-' + key).classList.remove('show');
+  }
+</script>
+
+</body>
+</html>

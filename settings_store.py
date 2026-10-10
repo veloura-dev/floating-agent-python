@@ -12,30 +12,39 @@ built primitives (`_ensure_folder`/`_write_encrypted`/`_read_encrypted`/
 `_lock_down`) directly -- this file only owns the *shape* of the data
 (faculties, model entries, defaults), not how it's stored on disk.
 
-Per the user's own framing for this feature: for now this only manages
-the roster of configured models/keys and reports whether each one is
-reachable -- it doesn't yet rewire Friday's actual think/act pipeline to
-call arbitrary user-added providers for every faculty (most of the ten
-faculties below -- Reasoning, Coding, Image/Video Generation, Text
-Generation -- have no real integration in agent_tools.py/agent_overlay.py
-yet at all). Those start out completely empty, same spirit as memory.py's
-reserved-but-unused uploads/generated folders: real scaffolding for a
-capability that's coming, not a working feature yet. Thinking, Research,
-Embedding, Audio Generation, and Transcription *are* real today, so they
-come pre-populated with Friday's actual current providers.
+Each faculty maps onto one real region of Friday's Brain (see
+act_script.py's ROLE_FACULTY) -- Voice feeds the floating circle's own
+lightweight single-call chat path (agent_overlay.AIWorker's normal,
+non-ide_scoped chain), and Thinking/Planning/Review/Coding/Text
+Generation each feed the matching region of Act Script's Sequential
+Rotation/Fan-Out/Debate pipelines (the IDE's compulsory coding engine --
+see agent_overlay.AIWorker.run()'s ide_scoped branch). A region whose own
+faculty has nothing configured yet automatically falls back to whatever
+Thinking has, so everything keeps working out of the box; the moment a
+user adds one or more models under a *specific* faculty, that region
+switches to using ONLY those -- real, dedicated capacity of its own
+rather than a bigger shared list diluted with Thinking's own traffic,
+which is real extra quota/rate-limit headroom exactly where they chose
+to add it, not just bookkeeping.
+Image Generation, Video Generation, and Embedding remain pure
+scaffolding -- no real generation/embedding call wiring exists for a
+user-added entry there yet (Embedding's own two pre-seeded entries are
+still real; a custom addition there is reachability-checked only).
 """
 import os
 import uuid
 
 import memory
 
-# The ten faculties the settings panel organizes models under, in the
+# The twelve faculties the settings panel organizes models under, in the
 # order they're shown. A "faculty" here is just a named bucket of model
 # entries -- it doesn't imply Friday can actually act on every entry yet
 # (see module docstring above).
 FACULTIES = [
+    "Voice",
     "Thinking",
-    "Reasoning",
+    "Planning",
+    "Review",
     "Coding",
     "Image Generation",
     "Audio Generation",
@@ -82,6 +91,23 @@ def _default_data():
     everything as empty/unset the first time it's opened.
     """
     return {
+        # Voice is seeded with the exact same three builtin
+        # providers/keys as Thinking below (same ids, so the dedup in
+        # act_script.available_slots() never double-counts them) --
+        # today the floating circle's plain chat chain and Act Script's
+        # Thinking region really are the same three calls, so this
+        # keeps that true out of the box. Add a model here specifically
+        # (a second key, or a different provider entirely) to give just
+        # the circle's own voice/typed chat extra fallback headroom
+        # without touching the IDE/Act Script side at all.
+        "Voice": [
+            _entry("gemini", "Google Gemini", "gemini-3.8-flash",
+                   "gemini", _env("GEMINI_API_KEY")),
+            _entry("groq", "Groq", "llama-3.3-70b-versatile",
+                   "groq", _env("GROQ_API_KEY")),
+            _entry("mistral", "Mistral", "mistral-small-latest",
+                   "mistral", _env("MISTRAL_API_KEY")),
+        ],
         "Thinking": [
             _entry("gemini", "Google Gemini", "gemini-3.8-flash",
                    "gemini", _env("GEMINI_API_KEY")),
@@ -90,7 +116,8 @@ def _default_data():
             _entry("mistral", "Mistral", "mistral-small-latest",
                    "mistral", _env("MISTRAL_API_KEY")),
         ],
-        "Reasoning": [],
+        "Planning": [],
+        "Review": [],
         "Coding": [],
         "Image Generation": [],
         "Audio Generation": [
@@ -128,9 +155,31 @@ def load():
         save(data)
         return data
     changed = False
+    if "Review" not in data and "Reasoning" in data:
+        # "Reasoning" was renamed to "Review" (it was always only ever
+        # used for review/critic/adjudicator/aggregator-review work --
+        # see act_script.py's ROLE_FACULTY -- so the old name was just
+        # a mislabel, not a different capability). Carry an existing
+        # user's models straight over under the new name rather than
+        # losing them or leaving an orphaned "Reasoning" section no
+        # panel will ever show again.
+        data["Review"] = data.pop("Reasoning")
+        changed = True
     for fac in FACULTIES:
         if fac not in data:
-            data[fac] = []
+            if fac == "Voice" and data.get("Thinking"):
+                # Voice is a brand-new faculty added after Thinking's
+                # own models already existed and were already doing
+                # exactly this job for the floating circle's plain chat
+                # chain -- backfill an existing user's save with a real
+                # copy of whatever Thinking already has (same ids, same
+                # keys) instead of leaving them staring at an empty
+                # section that doesn't reflect what's actually been
+                # happening in their circle all along. A fresh install
+                # never hits this path at all (see _default_data()).
+                data[fac] = [dict(e) for e in data["Thinking"]]
+            else:
+                data[fac] = []
             changed = True
     if changed:
         save(data)

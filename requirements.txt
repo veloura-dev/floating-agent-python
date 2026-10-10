@@ -22,6 +22,17 @@ requests>=2.28
 google-api-python-client>=2.100.0
 google-auth-httplib2>=0.2.0
 google-auth-oauthlib>=1.2.0
+# Real browser automation for Friday's browser_* tools (browser_tools.py) --
+# navigate, click, fill forms, read rendered content/console output. The
+# pip package alone isn't enough: Playwright's actual browser binaries are
+# a separate download, not a Python dependency -- run this once after
+# installing requirements:
+#     playwright install chromium
+# (add --with-deps on a fresh Linux machine missing the browser's system
+# libraries; Windows/macOS normally don't need it). Without that one-time
+# step, every browser_* tool call fails with a clear "isn't installed"
+# message rather than crashing -- see browser_tools.py's own error handling.
+playwright>=1.40.0
 # Optional, Windows-only: lets type_in_app() actually type live into an
 # already-open Notepad window Friday opened via open_app(). Everything
 # else in app_panels.py (open/minimize/restore/close real apps) works
@@ -29,3 +40,12 @@ google-auth-oauthlib>=1.2.0
 # "type more text into something already open" feature; its absence is
 # detected and reported plainly rather than failing silently.
 pywinauto>=0.6.8; sys_platform == "win32"
+# Optional: real HTML/CSS/JS rendering for webview_panels.py's upgraded
+# Chat/Profile/Image Generation/Video Generation panels (see that
+# module's own docstring). On Windows this uses the Edge WebView2
+# Runtime, which ships with Windows 10/11 by default -- nothing extra
+# to install there. Entirely optional: if pywebview or a working
+# backend isn't available, webview_panels.WEBVIEW_AVAILABLE is simply
+# False and the real app keeps using conversation_panels.py's native
+# Tkinter panels instead; nothing else depends on this package.
+pywebview>=5.0

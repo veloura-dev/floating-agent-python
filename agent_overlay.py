@@ -1047,14 +1047,108 @@ class AIWorker(QThread):
                 return False, None, f"{CONNECTIVITY_ERROR_TAG} (Mistral)."
             return False, None, f"⚠️ Mistral error: {exc}"
 
+    def _try_voice_extras(self):
+        """Returns (ok, text_or_none, friendly_error_or_none). Last-
+        resort tier, tried only after Gemini/Groq/Mistral above have
+        all already failed or aren't configured: any REAL EXTRA model
+        the user has specifically added under the Settings panel's
+        "Voice" faculty (see settings_panel.py/settings_store.py)
+        beyond Friday's three original builtin providers -- a second
+        key for a provider already in use (more quota), or an entirely
+        different OpenAI-compatible endpoint. Routes through
+        act_script.py's own region/dispatch plumbing (region_pool/
+        call_model) so this never duplicates that logic, but note the
+        real trade-off: act_script's dispatch is plain text generation
+        only, no tool-calling -- unlike _try_gemini/_try_groq/
+        _try_mistral above, a reply from here can't open apps, read
+        files, etc. That's acceptable for a last-resort tier (answering
+        in plain text beats returning nothing), but it's why this only
+        ever runs after every tool-capable builtin option has already
+        been exhausted, never before.
+        """
+        try:
+            import act_script
+        except Exception:  # noqa: BLE001
+            return False, None, None  # Act Script unavailable -- silently skip, not an error
+
+        try:
+            entries = act_script.region_pool("voice")
+        except Exception:  # noqa: BLE001
+            return False, None, None
+
+        # Skip whichever entries are literally the same key(s) already
+        # tried above as Gemini/Groq/Mistral (Voice is pre-seeded with
+        # those exact three by default -- see settings_store.py) --
+        # only a key/entry genuinely beyond that default is worth a
+        # fresh attempt here.
+        already_tried_keys = {k for k in (GEMINI_API_KEY, GROQ_API_KEY, MISTRAL_API_KEY) if k}
+        extras = [e for e in entries if e.get("api_key") not in already_tried_keys]
+        if not extras:
+            return False, None, None
+
+        last_err = None
+        for entry in extras:
+            result = act_script.call_model("voice", entry["id"], self._system_prompt(), self._prompt)
+            if result.ok:
+                return True, result.text, None
+            last_err = result.error
+        return False, None, (f"⚠️ Voice (extra models): {last_err}" if last_err else None)
+
     # -- entry point ---------------------------------------------------------
     def run(self):
         if not GEMINI_API_KEY and not GROQ_API_KEY and not MISTRAL_API_KEY:
-            self.failed.emit(
-                "No API key found. Add GEMINI_API_KEY, GROQ_API_KEY, and/or "
-                "MISTRAL_API_KEY to the .env file next to agent_overlay.py, "
-                "then restart the app."
-            )
+            # Still worth a real look before giving up entirely: a user
+            # may have configured a model only through the Settings
+            # panel (see settings_panel.py) -- under Voice for the
+            # circle's own plain chat, or under Thinking (or anything
+            # that falls back to it) for Act Script's IDE path -- with
+            # none of the three original env-var-backed keys set at all.
+            has_any_configured_model = False
+            try:
+                import act_script
+                has_any_configured_model = (
+                    bool(act_script.region_pool("voice"))
+                    or bool(act_script.region_pool("thinking"))
+                )
+            except Exception:  # noqa: BLE001
+                pass
+            if not has_any_configured_model:
+                self.failed.emit(
+                    "No API key found. Add GEMINI_API_KEY, GROQ_API_KEY, and/or "
+                    "MISTRAL_API_KEY to the .env file next to agent_overlay.py, "
+                    "or add a model under Settings (any region), then try again."
+                )
+                return
+
+        # Standing rule: every request that comes in through the IDE's
+        # own embedded "Friday AI Chat" panel (ide_scoped=True -- see
+        # __init__'s docstring and _ide_chat_ask in this same file) is
+        # compulsorily run through Act Script's Sequential Rotation
+        # pipeline instead of the normal single-model Gemini/Groq/
+        # Mistral fallback chain below. That's deliberate, not a
+        # fallback/opt-in: the IDE's job is writing and fixing real code
+        # with real attention to detail, and Sequential Rotation is what
+        # actually enforces that -- a real plan with a Contract, one
+        # real model per step with fresh read-before-write file reads,
+        # a REAL mechanical (non-LLM) verify after every step, a bounded
+        # fix-forward retry when that verify fails, and a final Review
+        # pass by a model that did not write the work it's judging. A
+        # plain single-model tool-loop has none of those guarantees.
+        # See act_script.py's own module docstring for the full
+        # pipeline. Imported lazily, here, rather than at module level
+        # -- act_script.py itself tries to import this module (to reuse
+        # these exact GEMINI_MODEL/GROQ_MODEL/MISTRAL_MODEL/API-key
+        # constants with zero drift, see its own docstring) -- doing
+        # that import eagerly up here would be circular; by the time
+        # run() actually executes, this module is already fully loaded,
+        # so act_script.py's own import of it succeeds cleanly instead.
+        if self._ide_scoped and not self._summarize_only:
+            try:
+                import act_script
+                reply = act_script.run_act_script(self._prompt, mode="sequential")
+                self.succeeded.emit(reply)
+            except Exception as exc:  # noqa: BLE001
+                self.failed.emit(f"Act Script error: {exc}")
             return
 
         # Automatic recall, done here (background thread) rather than in
@@ -1097,12 +1191,26 @@ class AIWorker(QThread):
             self.succeeded.emit(mistral_text)
             return
 
-        # All three failed (or weren't configured) — surface the most
-        # useful combination of messages we have.
+        # Last-resort tier: any extra model the user specifically added
+        # under Settings -> Voice beyond the three builtins just tried
+        # above (see _try_voice_extras' own docstring for the tool-
+        # calling trade-off). Not wired into the circuit breaker above --
+        # it's already a last resort only reached when everything else
+        # just failed, so there's no meaningful "skip it, it's probably
+        # still down" cost to save here.
+        extra_ok, extra_text, extra_err = self._try_voice_extras()
+        if extra_ok:
+            self.succeeded.emit(extra_text)
+            return
+
+        # All three (plus any configured Voice extras) failed (or
+        # weren't configured) — surface the most useful combination of
+        # messages we have.
         tried_errors = [
             ("Gemini", gemini_err),
             ("Groq", groq_err),
             ("Mistral", mistral_err),
+            ("Voice (extra models)", extra_err),
         ]
         tried_errors = [(name, err) for name, err in tried_errors if err]
 

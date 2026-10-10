@@ -59,11 +59,11 @@ def part_a():
     try:
         memory.set_memory_dir(tmp)
 
-        check("FACULTIES has exactly the ten requested faculties, in order",
+        check("FACULTIES has exactly the twelve requested faculties, in order",
               ss.FACULTIES == [
-                  "Thinking", "Reasoning", "Coding", "Image Generation",
-                  "Audio Generation", "Video Generation", "Research",
-                  "Embedding", "Text Generation", "Transcription",
+                  "Voice", "Thinking", "Planning", "Review", "Coding",
+                  "Image Generation", "Audio Generation", "Video Generation",
+                  "Research", "Embedding", "Text Generation", "Transcription",
               ])
 
         data = ss.load()
@@ -72,11 +72,18 @@ def part_a():
         check("Thinking is pre-seeded with Gemini/Groq/Mistral",
               {e["name"] for e in data["Thinking"]} ==
               {"Google Gemini", "Groq", "Mistral"})
-        check("Reasoning/Coding/Image/Video/Text Generation start empty "
-              "(no real integration yet)",
-              data["Reasoning"] == [] and data["Coding"] == [] and
-              data["Image Generation"] == [] and data["Video Generation"] == [] and
-              data["Text Generation"] == [])
+        check("Voice is pre-seeded with the exact same builtin providers as "
+              "Thinking (same real chain today, see act_script.py)",
+              {e["name"] for e in data["Voice"]} ==
+              {"Google Gemini", "Groq", "Mistral"} and
+              {e["id"] for e in data["Voice"]} == {e["id"] for e in data["Thinking"]})
+        check("Planning/Review/Coding/Image/Video/Text Generation start "
+              "empty (Planning/Review/Coding/Text Generation fall back to "
+              "Thinking's pool for real via act_script.py; Image/Video "
+              "Generation have no real integration yet at all)",
+              data["Planning"] == [] and data["Review"] == [] and
+              data["Coding"] == [] and data["Image Generation"] == [] and
+              data["Video Generation"] == [] and data["Text Generation"] == [])
         check("Research is pre-seeded with Tavily",
               [e["name"] for e in data["Research"]] == ["Tavily"])
         check("Audio Generation is pre-seeded with local Piper",
@@ -368,8 +375,9 @@ def part_c():
 
         panel = rec["frame"]
         check("the real SettingsPanel has one row per seeded model "
-              "(3 Thinking + 1 Audio + 1 Research + 2 Embedding + 1 Transcription)",
-              len(panel._row_widgets) == 8)
+              "(3 Voice + 3 Thinking + 1 Audio + 1 Research + 2 Embedding + "
+              "1 Transcription; Planning starts empty)",
+              len(panel._row_widgets) == 11)
         check("a Thinking row's key is shown masked, never in the clear",
               panel._row_widgets.get(("Thinking", "gemini")) is not None)
 

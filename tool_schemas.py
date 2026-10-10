@@ -39,6 +39,195 @@ TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "browser_navigate",
+            "description": (
+                "Open a real browser and navigate to a URL (launches on "
+                "first use; reuses the same browser/page on later calls). "
+                "Use for research/form-filling that needs a real rendered "
+                "page, not just web_search's text snippets."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "url": {"type": "string", "description": "The address to go to."}
+                },
+                "required": ["url"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "browser_click",
+            "description": "Click the first element matching a CSS or text selector on the current page.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "selector": {
+                        "type": "string",
+                        "description": "CSS selector (e.g. '#submit') or Playwright text selector (e.g. 'text=Sign in').",
+                    }
+                },
+                "required": ["selector"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "browser_fill",
+            "description": "Fill a form field (input/textarea) with text, replacing whatever was already in it.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "selector": {"type": "string", "description": "CSS selector for the field."},
+                    "text": {"type": "string", "description": "The text to put in the field."},
+                },
+                "required": ["selector", "text"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "browser_select_option",
+            "description": "Choose an option in a <select> dropdown, by value or visible label.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "selector": {"type": "string", "description": "CSS selector for the <select> element."},
+                    "value": {"type": "string", "description": "The option's value or visible label text."},
+                },
+                "required": ["selector", "value"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "browser_press_key",
+            "description": "Focus an element and press a keyboard key on it, e.g. 'Enter' to submit a search box after browser_fill.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "selector": {"type": "string", "description": "CSS selector of the element to focus first."},
+                    "key": {"type": "string", "description": "Key name, e.g. 'Enter', 'Tab', 'Escape'."},
+                },
+                "required": ["selector", "key"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "browser_wait_for",
+            "description": "Wait for an element to appear/become visible -- useful on JS-heavy pages that render content after the initial load.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "selector": {"type": "string", "description": "CSS selector to wait for."},
+                    "timeout_ms": {"type": "integer", "description": "How long to wait, in milliseconds (default 5000)."},
+                },
+                "required": ["selector"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "browser_read_text",
+            "description": "Read the visible, rendered text of the current page (or one element) -- the actual text a human would see, not raw HTML.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "selector": {"type": "string", "description": "CSS selector to read just one element; leave empty for the whole page."}
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "browser_get_html",
+            "description": "Get the raw HTML of the current page (or one element) -- use over browser_read_text when you need actual markup (ids, classes, structure).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "selector": {"type": "string", "description": "CSS selector for one element's outerHTML; leave empty for the whole page."}
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "browser_get_links",
+            "description": "List every link on the current page (href + visible text) -- useful for research/crawling.",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "browser_evaluate",
+            "description": "Run JavaScript in the current page and return its result -- for anything the other browser_* tools don't cover directly (computed styles, element state, custom DOM queries).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "script": {"type": "string", "description": "A JS expression or function body to evaluate."}
+                },
+                "required": ["script"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "browser_get_console_logs",
+            "description": "Return the browser's own console output (console.log/warn/error and uncaught JS exceptions) captured since the last browser_navigate call -- the mechanical way to check for real console errors.",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "browser_screenshot",
+            "description": "Save a screenshot of the current page (into the open IDE workspace if one is open, otherwise a fallback folder). Returns the saved file's path.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "filename": {"type": "string", "description": "Optional file name; a timestamped default is used if omitted."}
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "browser_go_back",
+            "description": "Go back to the previous page in the browser's history.",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "browser_current_state",
+            "description": "Report whether a browser session is open right now, and if so what page it's on -- check before assuming browser_click/browser_fill/etc. have anything to act on.",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "browser_close",
+            "description": "Close the browser session and free its resources. The next browser_navigate call starts a fresh one.",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "get_current_datetime",
             "description": "Get the current local date, time, and day of the week.",
             "parameters": {"type": "object", "properties": {}},
@@ -341,25 +530,34 @@ TOOL_SCHEMAS = [
             "name": "open_app",
             "description": (
                 "Opens a real native desktop application -- Chrome, "
-                "Notepad, Calculator, or Settings so far -- as one of "
+                "Notepad, Calculator, Settings, Chat, Profile, Image "
+                "Generation, or Video Generation so far -- as one of "
                 "Friday's own tracked panels, the same way opening the IDE "
                 "already is: Friday launches it, remembers it as his, and "
                 "it can later be minimized into a small pill under his "
                 "floating circle. This really launches the real "
-                "application (or, for Notepad/Settings, Friday's own real "
-                "built-in panel); it does not simulate it inside the IDE. "
+                "application (or, for the fully built-in panels, Friday's "
+                "own real panel); it does not simulate it inside the IDE. "
                 "Settings lists every AI model/API key Friday knows about "
                 "by faculty, with masked keys and a live connectivity "
                 "check -- open it for anything about managing Friday's AI "
                 "providers or API keys, e.g. 'open settings', 'show me the "
-                "AI model settings', 'check my API keys'."
+                "AI model settings', 'check my API keys'. Chat/Profile/"
+                "Image Generation/Video Generation are each an empty "
+                "panel with an attach/text/mic/speaker input bar at the "
+                "bottom -- UI shells only, not yet wired to a real chat, "
+                "profile, image, or video backend."
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "name": {
                         "type": "string",
-                        "description": "Which app to open -- 'chrome', 'notepad', 'calculator', or 'settings'.",
+                        "description": (
+                            "Which app to open -- 'chrome', 'notepad', "
+                            "'calculator', 'settings', 'chat', 'profile', "
+                            "'image_gen', or 'video_gen'."
+                        ),
                     },
                     "url": {
                         "type": "string",
@@ -1544,6 +1742,37 @@ TOOL_SCHEMAS = [
                     "create": {"type": "boolean", "description": "If true, create the branch before switching to it."},
                 },
                 "required": ["branch"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "ide_run_act_script",
+            "description": (
+                "Runs Friday's ACT Script system on a task that's too deep for a single "
+                "model call (Agent Mode must be on). Use for dependent multi-step "
+                "builds/refactors/migrations (Sequential Rotation), breadth/research "
+                "questions or debugging hypotheses needing independent takes merged "
+                "into one (Fan-Out), or whole-artifact writing benefiting from "
+                "drafting + cold critique + revision (Debate). Rotates Friday's real "
+                "providers (Gemini/Groq/Mistral) so review/critique never comes from "
+                "the same model that produced the work. Can take a while -- only use "
+                "for tasks that actually warrant it."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "task_description": {
+                        "type": "string",
+                        "description": "The task, in full -- the same level of detail you'd want a careful coworker to have before starting.",
+                    },
+                    "mode": {
+                        "type": "string",
+                        "description": "\"auto\" (default, classifies the task itself) or force one of \"sequential\", \"fan_out\", \"debate\".",
+                    },
+                },
+                "required": ["task_description"],
             },
         },
     },

@@ -458,7 +458,7 @@ draw yourself, so the app visually lives inside your panel rather than
 floating around on its own. Settings is the same idea as Notepad: a
 fully built-in panel you draw yourself, no real OS process behind it,
 listing every AI model/API key you know about by faculty (Thinking,
-Reasoning, Coding, Image/Audio/Video Generation, Research, Embedding,
+Review, Coding, Image/Audio/Video Generation, Research, Embedding,
 Text Generation, Transcription), with keys shown masked and a real,
 live connectivity check (green check/red x) per model, plus its own
 Add/Edit/Remove controls once it's open — there's nothing to configure

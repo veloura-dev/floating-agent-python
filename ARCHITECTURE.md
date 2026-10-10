@@ -438,7 +438,7 @@ per panel type.
 
 ### 2.1 The Settings panel — `settings_panel.py` + `settings_store.py` + `settings_checks.py`
 Lets the user see and manage every AI model/API key Friday knows about,
-grouped into ten fixed **faculties** (Thinking, Reasoning, Coding, Image
+grouped into twelve fixed **faculties** (Voice, Thinking, Planning, Review, Coding, Image
 Generation, Audio Generation, Video Generation, Research, Embedding, Text
 Generation, Transcription), each its own section with its own model list
 and its own "+ Add Model" button. Split across three files by concern,
@@ -452,16 +452,21 @@ the same split memory.py's own docs/code follow:
   with Friday's actual already-wired providers and their current env-var
   keys (Gemini/Groq/Mistral under Thinking, Tavily under Research,
   Gemini+Mistral's embedding models under Embedding, local Piper under
-  Audio Generation, local faster-whisper under Transcription) — per the
-  user's own explicit framing for this feature, this is deliberately
-  *just a UI* over that roster for now, not a rewiring of the real think/
-  act pipeline to call arbitrary added providers, so the other five
-  faculties (Reasoning, Coding, Image Generation, Video Generation, Text
-  Generation) start completely empty: real scaffolding for a capability
-  that isn't built yet, same spirit as memory.py's reserved-but-unused
-  `uploads/`/`generated/` folders. `mask_key()` is the only thing ever
-  shown for a stored key — a fixed-width bullet mask plus a length hint,
-  never any real characters, not even a short trailing fragment.
+  Audio Generation, local faster-whisper under Transcription). Thinking/
+  Planning/Coding/Review/Text Generation are now real, dedicated
+  dispatch targets — act_script.py's `region_pool()`/`ROLE_FACULTY` do a
+  fresh, uncached `settings_store.load()` on every Act Script run and
+  route that region's actual traffic through whatever's configured
+  there (falling back to Thinking's pool only if the region's own
+  faculty is empty), including a genuinely callable "+ Add Model" entry
+  (an OpenAI-compatible `/chat/completions` POST — see
+  `_dispatch_generic_http`), not just a saved-for-later key. Only Image
+  Generation and Video Generation remain real scaffolding — no
+  generation call wiring exists for either yet, same spirit as
+  memory.py's reserved-but-unused `uploads/`/`generated/` folders.
+  `mask_key()` is the only thing ever shown for a stored key — a
+  fixed-width bullet mask plus a length hint, never any real
+  characters, not even a short trailing fragment.
 - **`settings_checks.py`** — one function per provider (`check_gemini`,
   `check_groq`, `check_mistral`, `check_tavily`, `check_local_piper`,
   `check_local_whisper`) that makes a real, cheap backend call (listing

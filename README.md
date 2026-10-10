@@ -219,6 +219,28 @@ more at the bottom already.
 python agent_overlay.py
 ```
 
+### Troubleshooting: "Permission denied" errors under `.friday\` (Windows)
+
+If a panel (Settings, Memory, etc.) shows something like
+`[Errno 13] Permission denied: 'C:\Users\<you>\.friday\...'`, Friday
+already retries automatically through short, transient locks (common
+right after a file is first written), but if it still fails it's
+almost always one of these two things:
+
+- **Another copy of Friday is already running** (a second terminal/VS
+  Code window you forgot about) and is holding that file open — close
+  every Friday window/terminal, then launch it again.
+- **Windows Defender's Controlled Folder Access** is blocking Python
+  from writing under your user folder — open Windows Security → Virus
+  & threat protection → Manage ransomware protection → Controlled
+  folder access, and either allow `python.exe` there or turn the
+  feature off temporarily.
+
+If neither applies and the error keeps happening on the exact same
+file, closing Friday and deleting just that one file (never the whole
+`.friday` folder unless you want to reset everything) lets Friday
+recreate it fresh next launch.
+
 ## Why Gemini + Groq + Mistral?
 
 Together these three make up the **"think"** stage of the brain — the LLM
@@ -468,14 +490,15 @@ IDE's "Friday AI Chat" panel, or Friday's own conversation history) —
 cues are stripped there instead of spoken, since nothing about them means
 anything outside of speech.
 
-## Settings panel: AI models by faculty
+## Settings panel: AI models by region
 
 Say "open settings" (or "AI settings," "model settings," "api settings")
 and Friday opens a Settings panel — one of his own native panels, same as
 Notepad, not a popup — listing every AI model/API key he knows about,
-organized into ten fixed **faculties**: Thinking, Reasoning, Coding,
-Image Generation, Audio Generation, Video Generation, Research,
-Embedding, Text Generation, and Transcription. Each faculty is its own
+organized into twelve fixed **regions** (the same regions Friday's Brain
+Mapping system and Act Script use): Voice, Thinking, Planning, Review,
+Coding, Image Generation, Audio Generation, Video Generation, Research,
+Embedding, Text Generation, and Transcription. Each region is its own
 section with its own model list and its own **+ Add Model** button.
 
 - **Keys are always masked.** No row ever shows a real API key — just a
@@ -492,18 +515,28 @@ section with its own model list and its own **+ Add Model** button.
 - **"+ Add Model" works for a genuinely new provider**, not just filling
   in a key for something Friday already knows — display name, model/
   version string, an optional API base URL, and the API key. A custom
-  provider's "check" is an honest best-effort HTTP reachability call
-  against that base URL (labeled "reachable," not "verified," since
-  Friday has no real call code for a provider it doesn't already know).
-- **What's pre-filled vs. empty:** Thinking (Gemini/Groq/Mistral),
-  Research (Tavily), Embedding (Gemini/Mistral's embedding models), Audio
-  Generation (local Piper), and Transcription (local faster-whisper) are
-  Friday's real, already-working capabilities, so they show up seeded
-  with whatever's already in your `.env`. Reasoning, Coding, Image
-  Generation, Video Generation, and Text Generation have no real
-  integration in Friday yet — their sections say so plainly, and
-  anything added there today is just saved for later, not wired into a
-  live capability.
+  provider is a real, callable model (an OpenAI-compatible
+  `/chat/completions` call), not just a reachability ping, for every
+  region below except Image/Video Generation (those two still have no
+  real generation call wiring in Friday at all).
+- **Adding a model to a specific region gives that region real, dedicated
+  extra capacity** — more quota/rate-limit headroom exactly where you add
+  it, whether that's a second key for a provider you already use or an
+  entirely different provider. Voice feeds the floating circle's own
+  plain chat; Thinking/Planning/Coding/Review/Text Generation each
+  feed the matching step of Agent Mode's Act Script pipeline (see below).
+  A region left empty automatically falls back to whatever's configured
+  under Thinking, so everything keeps working even if you never open this
+  panel at all.
+- **What's pre-filled vs. empty:** Voice and Thinking (Gemini/Groq/
+  Mistral), Research (Tavily), Embedding (Gemini/Mistral's embedding
+  models), Audio Generation (local Piper), and Transcription (local
+  faster-whisper) are Friday's real, already-working capabilities, so
+  they show up seeded with whatever's already in your `.env`. Planning,
+  Review, Coding, and Text Generation start empty (they fall back to
+  Thinking's pool until you add something of their own); Image Generation
+  and Video Generation have no real integration in Friday yet — their
+  sections say so plainly.
 - **Storage:** like the rest of this app's local config, settings are
   just a local, encrypted-at-rest file (reusing Memory's own encryption
   — see **Memory** above), not a cloud account or server-side service.
@@ -518,6 +551,17 @@ floating circle** as it opens. Say **"close agent mode"** (or "close the
 IDE") and it does the reverse — shrinks back down into the circle, then
 disappears; that's the only thing that closes it. While Agent Mode is on,
 the IDE's own close button/Alt+F4/File > Exit are deliberately disabled
+
+Every real coding request made through the IDE's own chat panel is
+compulsorily run through **Act Script's Sequential Rotation** — a real
+plan with a Contract, one model per step with a fresh read of the real
+file before writing it, a mechanical (non-LLM) verify after every step, a
+bounded one-shot fix-forward retry on a failed verify, and a final Review
+pass by a model that didn't write the work it's judging. This is always
+on for the IDE chat, not an opt-in mode — see the Settings section above
+for how to give any of its regions (Thinking/Planning/Coding/Review/
+Text Generation) extra model capacity of their own.
+
 (they just show a reminder to ask Friday instead) — Friday is the one driving
 this window, so only Friday's own "close agent mode" can close it.
 

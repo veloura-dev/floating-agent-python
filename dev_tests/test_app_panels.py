@@ -498,7 +498,7 @@ def part_b():
                  "close_app", "type_in_app"):
         check(f"{name} is active even while Agent Mode is off", name in active_off)
     check("ide_create_file still hidden while off", "ide_create_file" not in active_off)
-    check("24 tools active while off (17 original + 7 new memory/task tools)", len(active_off) == 24)
+    check("39 tools active while off (17 original + 7 new memory/task tools + 15 new general-purpose browser_* tools)", len(active_off) == 39)
 
     # Swap in fakes for the shared singleton -- same spirit as every other
     # dev_tests file reaching into at._ide_app directly; reuses the real
@@ -545,10 +545,11 @@ def part_b():
           "Chrome (minimized)" in listing and "Notepad (minimized)" in listing)
 
     active_on = {f.__name__ for f in at.get_active_gemini_tools()}
-    check("88 tools active while Agent Mode is on (64 original + 12 new IDE "
+    check("104 tools active while Agent Mode is on (64 original + 12 new IDE "
           "tools + 7 new memory/task tools + 2 new frontend-skill tools + "
-          "3 new Build Protocol tools)",
-          len(active_on) == 88)
+          "3 new Build Protocol tools + 15 new general-purpose browser_* tools + "
+          "1 new ide_run_act_script tool)",
+          len(active_on) == 104)
     for name in ("open_app", "list_open_apps", "minimize_app", "restore_app",
                  "close_app", "type_in_app"):
         check(f"{name} still active while on", name in active_on)
@@ -660,7 +661,7 @@ def part_b():
           or at.list_open_apps() == "No panels are open right now — nothing to list.")
 
     active_after = {f.__name__ for f in at.get_active_gemini_tools()}
-    check("back to 24 tools after closing everything (17 original + 7 new memory/task tools)", len(active_after) == 24)
+    check("back to 39 tools after closing everything (17 original + 7 new memory/task tools + 15 new general-purpose browser_* tools)", len(active_after) == 39)
 
 
 def part_c():
