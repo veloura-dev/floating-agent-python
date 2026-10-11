@@ -103,8 +103,6 @@ KNOWN_APPS = {
     "notepad": {
         "label": "Notepad",
         "aliases": ("notepad", "note pad", "text editor", "notes"),
-        # No title_hint needed any more -- Notepad is never a real OS
-        # process/window to go looking for (see this module's docstring).
     },
     "calculator": {
         "label": "Calculator",
@@ -115,34 +113,24 @@ KNOWN_APPS = {
         "label": "Settings",
         "aliases": ("settings", "settings panel", "ai settings", "model settings",
                     "api settings", "ai models", "model manager"),
-        # No title_hint needed -- same reason as Notepad: this is never
-        # a real OS process/window, see CUSTOM_PANEL_APPS below.
     },
     "chat": {
         "label": "Chat",
         "aliases": ("chat", "chat panel", "open chat", "new chat"),
-        # Only consulted if set_panel_ui_mode("web") is ever turned on
-        # (see below) -- in native mode (the default) this key is in
-        # CUSTOM_PANEL_APPS, never a real OS process/window to go
-        # looking for, same as Notepad/Settings.
-        "title_hint": "chat",
     },
     "profile": {
         "label": "Profile",
         "aliases": ("profile", "profile panel", "my profile", "user profile"),
-        "title_hint": "profile",
     },
     "image_gen": {
         "label": "Image Generation",
         "aliases": ("image generation", "image gen", "image gen panel",
                     "generate an image", "image generator"),
-        "title_hint": "image generation",
     },
     "video_gen": {
         "label": "Video Generation",
         "aliases": ("video generation", "video gen", "video gen panel",
                     "generate a video", "video generator"),
-        "title_hint": "video generation",
     },
 }
 
@@ -506,70 +494,6 @@ _CUSTOM_PANEL_CLASSES["chat"] = ChatPanel
 _CUSTOM_PANEL_CLASSES["profile"] = ProfilePanel
 _CUSTOM_PANEL_CLASSES["image_gen"] = ImageGenPanel
 _CUSTOM_PANEL_CLASSES["video_gen"] = VideoGenPanel
-
-
-# ---------------------------------------------------------------------
-# Option B: optional real HTML/CSS/JS rendering for these same 4 panels
-# (see webview_panels.py's own module docstring for the full design).
-# Off ("native", Friday's own hand-drawn Tkinter panels above) by
-# default -- these 4 keys stay in CUSTOM_PANEL_APPS exactly as they
-# were before this existed, so nothing about already-tested behavior
-# changes unless a caller deliberately opts in by calling
-# set_panel_ui_mode("web"). When "web" mode is on, these 4 keys are
-# removed from CUSTOM_PANEL_APPS entirely, so AppPanelManager.open()
-# falls through to the ordinary real-OS-process launch path (the exact
-# same one Chrome/Calculator already use) instead of
-# _open_custom_panel -- RealLauncher.launch() (window_backend.py) is
-# what actually knows to run webview_panels.py for these keys.
-_WEBVIEW_PANEL_KEYS = ("chat", "profile", "image_gen", "video_gen")
-PANEL_UI_MODE = "native"
-
-
-def set_panel_ui_mode(mode):
-    """Switches Chat/Profile/Image Generation/Video Generation between:
-
-      - "native" (the default): Friday's own hand-drawn Tkinter panels,
-        conversation_panels.py -- zero real OS process, docks into the
-        floating circle's corner-placement/minimize-to-pill/active-glow
-        system exactly like Notepad/Settings.
-      - "web": the upgraded real HTML/CSS/JS rendering, webview_panels.py,
-        opened as its own real, independent OS process/window (same
-        category as Chrome -- tracked by PID/window handle, not
-        reparented or docked) -- see that module's own docstring for
-        exactly why it has to be a separate process rather than an
-        in-process widget (pywebview hard-requires owning the real
-        process main thread, which Tkinter/Qt already claim here).
-
-    Raises RuntimeError (does *not* silently fall back) if "web" is
-    requested but pywebview, or a working web-rendering backend on this
-    machine, isn't actually available -- callers should catch this and
-    tell the user plainly, the same honesty norm as everywhere else in
-    this codebase, rather than pretending the switch worked. Takes
-    effect for panels opened *after* this call; anything already open
-    is unaffected either way.
-    """
-    global PANEL_UI_MODE
-    if mode not in ("native", "web"):
-        raise ValueError("mode must be 'native' or 'web', got %r" % (mode,))
-    if mode == "web":
-        try:
-            import webview_panels as _wp
-        except Exception as exc:  # noqa: BLE001
-            raise RuntimeError(
-                f"Can't switch Chat/Profile/Image Generation/Video "
-                f"Generation to the 'web' UI: pywebview couldn't be "
-                f"imported ({exc}). Staying on 'native'.") from exc
-        if not _wp.WEBVIEW_AVAILABLE:
-            raise RuntimeError(
-                "Can't switch Chat/Profile/Image Generation/Video "
-                "Generation to the 'web' UI: pywebview is installed but no "
-                "working web-rendering backend was found on this machine "
-                "(e.g. the WebView2 Runtime on Windows, or WebKitGTK on "
-                "Linux). Staying on 'native'.")
-        CUSTOM_PANEL_APPS.difference_update(_WEBVIEW_PANEL_KEYS)
-    else:
-        CUSTOM_PANEL_APPS.update(_WEBVIEW_PANEL_KEYS)
-    PANEL_UI_MODE = mode
 
 
 class AppPanelManager:
@@ -1013,7 +937,8 @@ class AppPanelManager:
             # real window for every app.
             before_hwnds = self._backend.snapshot_top_level_hwnds()
             try:
-                proc = self._launcher.launch(key, url=url or None, file_path=None)
+                proc = self._launcher.launch(key, url=url or None, file_path=None,
+                                              content=content)
             except Exception as exc:  # noqa: BLE001
                 return f"Couldn't open {KNOWN_APPS[key]['label']}: {exc}"
 

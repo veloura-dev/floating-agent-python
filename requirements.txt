@@ -40,12 +40,3 @@ playwright>=1.40.0
 # "type more text into something already open" feature; its absence is
 # detected and reported plainly rather than failing silently.
 pywinauto>=0.6.8; sys_platform == "win32"
-# Optional: real HTML/CSS/JS rendering for webview_panels.py's upgraded
-# Chat/Profile/Image Generation/Video Generation panels (see that
-# module's own docstring). On Windows this uses the Edge WebView2
-# Runtime, which ships with Windows 10/11 by default -- nothing extra
-# to install there. Entirely optional: if pywebview or a working
-# backend isn't available, webview_panels.WEBVIEW_AVAILABLE is simply
-# False and the real app keeps using conversation_panels.py's native
-# Tkinter panels instead; nothing else depends on this package.
-pywebview>=5.0

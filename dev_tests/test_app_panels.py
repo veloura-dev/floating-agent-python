@@ -66,7 +66,7 @@ class FakeLauncher:
         self._next_pid = 1000
         self._last_proc = None
 
-    def launch(self, app_key, url=None, file_path=None):
+    def launch(self, app_key, url=None, file_path=None, content=None):
         self.calls.append((app_key, url, file_path))
         self._next_pid += 1
         self._last_proc = FakeProc(self._next_pid)
@@ -74,7 +74,7 @@ class FakeLauncher:
 
 
 class FailingLauncher:
-    def launch(self, app_key, url=None, file_path=None):
+    def launch(self, app_key, url=None, file_path=None, content=None):
         raise OSError("no such executable")
 
 

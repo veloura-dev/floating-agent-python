@@ -82,7 +82,7 @@ class FakeLauncher:
         self.calls = []
         self._next_pid = 2000
 
-    def launch(self, app_key, url=None, file_path=None):
+    def launch(self, app_key, url=None, file_path=None, content=None):
         self.calls.append((app_key, url, file_path))
         self._next_pid += 1
         return FakeProc(self._next_pid)

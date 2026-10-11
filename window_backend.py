@@ -23,13 +23,6 @@ import time
 import tkinter as tk
 from shutil import which as _which
 
-# Kept in sync with app_panels._WEBVIEW_PANEL_KEYS (that module is the
-# single source of truth for which 4 keys these are) -- duplicated here
-# as a plain literal rather than importing app_panels back, since
-# app_panels.py is the one that imports *this* module, not the other
-# way around.
-_WEBVIEW_PANEL_APP_KEYS = ("chat", "profile", "image_gen", "video_gen")
-
 
 class RealLauncher:
     """Launches a real native application as a child process. Windows-
@@ -39,45 +32,26 @@ class RealLauncher:
     there instead of silently failing outright.
     """
 
-    def launch(self, app_key, url=None, file_path=None):
+    def launch(self, app_key, url=None, file_path=None, content=None):
         """Returns a subprocess.Popen (or raises). `url` only matters
         for "chrome" (opened as a new tab of an already-running Chrome
         if one exists -- real Chrome's own well-known single-instance
         remoting handles that distinction entirely on its own, nothing
-        extra needed here). Notepad is never launched through here any
-        more -- it's one of CUSTOM_PANEL_APPS (see app_panels.py's own
+        extra needed here). Notepad/Settings are never launched through
+        here -- they're CUSTOM_PANEL_APPS (see app_panels.py's own
         module docstring), handled entirely by
-        AppPanelManager._open_custom_panel/CustomNotepadPanel instead,
-        with no real OS process at all. `file_path` is unused as of
-        that change but kept in this signature for backward source
-        compatibility with anything still calling this directly."""
+        AppPanelManager._open_custom_panel instead, with no real OS
+        process at all. `file_path`/`content` are unused but kept in
+        this signature for backward source compatibility with anything
+        still calling this directly."""
         system = platform.system()
         if app_key == "chrome":
             args = self._chrome_command(system, url)
         elif app_key == "calculator":
             args = self._calculator_command(system)
-        elif app_key in _WEBVIEW_PANEL_APP_KEYS:
-            args = self._webview_panel_command(app_key)
         else:
             raise ValueError(f"don't know how to open '{app_key}'")
         return subprocess.Popen(args)
-
-    def _webview_panel_command(self, app_key):
-        """Launches webview_panels.py as its own real OS process -- the
-        same category of launch as Chrome/Calculator just above, only
-        running Friday's own script instead of a third-party exe. Has
-        to be a genuinely separate process rather than an in-process
-        widget: pywebview hard-requires owning the real process main
-        thread (a flat check inside pywebview itself, true for every
-        backend), which Friday's main process already has spoken for
-        between Tkinter (every other panel) and Qt/PySide6 (the
-        floating circle overlay) -- see webview_panels.py's own
-        docstring for the full story. Only reachable at all once
-        app_panels.set_panel_ui_mode("web") has moved these keys out of
-        CUSTOM_PANEL_APPS; see that function's docstring."""
-        script = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                               "webview_panels.py")
-        return [sys.executable, script, app_key]
 
     def _chrome_command(self, system, url):
         if system == "Windows":

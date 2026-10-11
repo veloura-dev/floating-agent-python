@@ -242,7 +242,7 @@ def part_b_ideapp_set_panel_status():
 # Part C: AppPanelManager.set_status()
 # -------------------------------------------------------------------------
 class _FakeLauncher:
-    def launch(self, app_key, url=None, file_path=None):
+    def launch(self, app_key, url=None, file_path=None, content=None):
         raise AssertionError("notepad is Friday's own built-in panel -- "
                               "should never actually launch a process")
 
