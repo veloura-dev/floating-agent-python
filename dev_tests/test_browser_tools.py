@@ -276,7 +276,7 @@ def part_c_to_l_everything_else(fixture_dir):
 
 def main():
     try:
-        import playwright  # noqa: F401
+        from playwright.sync_api import sync_playwright
     except ImportError:
         print("Playwright isn't installed in this environment -- skipping "
               "(pip install playwright && playwright install chromium).")
@@ -284,6 +284,23 @@ def main():
 
     part_a_tool_registration()
     part_b_initial_state()
+
+    try:
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch(
+                headless=True,
+                args=["--no-sandbox", "--disable-dev-shm-usage"],
+            )
+            browser.close()
+    except Exception as exc:  # noqa: BLE001
+        reason = str(exc).splitlines()[0].encode("ascii", "replace").decode("ascii")
+        print(f"Chromium isn't available in this environment -- skipping "
+              f"live browser checks: {reason}")
+        passed = sum(1 for _, ok in CHECKS if ok)
+        print(f"\n{passed}/{len(CHECKS)} non-browser checks passed")
+        if passed != len(CHECKS):
+            sys.exit(1)
+        return
 
     with tempfile.TemporaryDirectory() as fixture_dir:
         with open(os.path.join(fixture_dir, "page1.html"), "w", encoding="utf-8") as f:

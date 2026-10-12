@@ -564,6 +564,9 @@ class _AgentHost:
     # (see _panel_manager/IDEApp construction below), so it's the one
     # place both sides can coordinate a single shared vertical stack of
     # pills under the circle without either module importing the other.
+    def get_friday_status(self):
+        return get_friday_status()
+
     def get_pill_slot(self, key):
         """0-based slot index `key` ("ide", or an app_panels.py panel
         key) should use in the shared minimized-pill stack, adding it to
@@ -665,6 +668,7 @@ _panel_manager = _app_panels_module.AppPanelManager(agent_host=_AGENT_HOST)
 _ide_opened_at = None        # time.time() of the IDE's current open, or None
 _maximized_panel_key = None  # "ide", an app_panels.py key, or None -- the one
                               # single panel currently visible on screen, if any
+_friday_status = ("idle", False)
 _MINIMIZED_STACK = []        # ordered keys, closest-to-circle (earliest minimized) first
 
 
@@ -677,6 +681,22 @@ def is_panel_minimized(key):
     window is already on screen, there's no point narrating something
     the user can already just look at."""
     return key in _MINIMIZED_STACK
+
+
+def get_friday_status():
+    return _friday_status
+
+
+def report_friday_status(state, is_error=False):
+    """Remember Friday's circle state and forward it to the active app panel."""
+    global _friday_status
+    _friday_status = (state, bool(is_error))
+    key = _maximized_panel_key
+    if key is not None and key != "ide":
+        try:
+            _panel_manager.report_friday_status(key, state, is_error)
+        except Exception:  # noqa: BLE001
+            pass
 
 
 def report_panel_status(key, status):
@@ -844,7 +864,7 @@ def _apply_active_panel_flag(key, active):
     app_panels.py panel's frame) whether it's currently Friday's single
     active/maximized panel right now -- the one in the unified
     placement system's one center/maximized slot -- so it can show
-    (active) or stop showing (not active) the pulsing violet
+    (active) or stop showing (not active) the pulsing accent
     active-panel border (see ide.py's _ActiveGlowAnimator, and
     IDEApp/EmbeddedAppPanel/CustomNotepadPanel's own set_active_panel
     methods). Purely cosmetic, never raises. A no-op if `key` is None
@@ -860,7 +880,12 @@ def _apply_active_panel_flag(key, active):
             rec = _panel_manager._panels.get(key)
             frame = rec.get("frame") if rec is not None else None
             if frame is not None:
-                _panel_manager._bridge.call(lambda: frame.set_active_panel(active))
+                def update_frame():
+                    frame.set_active_panel(active)
+                    if active and hasattr(frame, "set_friday_status"):
+                        frame.set_friday_status(*get_friday_status())
+
+                _panel_manager._bridge.call(update_frame)
     except Exception:  # noqa: BLE001
         pass
 
@@ -1147,22 +1172,12 @@ def _restore_ide_panel(assign_slot=True):
         minimized = False
     if not minimized:
         return "The IDE isn't minimized."
-    note = ""
-    if assign_slot:
-        # Decides where the IDE lands this time (always the one single
-        # active/maximized slot now, minimizing whoever else was active
-        # to make room -- see _place_new_or_restored_panel) and
-        # overrides the pop-out animation's own remembered pre-minimize
-        # geometry with it, so the IDE eases straight to its *new* slot
-        # in one motion instead of animating to its old spot and then
-        # snapping again.
-        bounds, _is_maximized, note = _place_new_or_restored_panel("ide")
-        if bounds is not None:
-            try:
-                _run_on_main(lambda: setattr(_ide_app, "_pre_minimize_geom", bounds))
-            except Exception:  # noqa: BLE001
-                pass
-    _run_on_main(lambda: _ide_app.restore_from_pill())
+    # Keep the shared placement decision inside restore_from_pill(): the
+    # pill's own click callback calls that method directly, bypassing this
+    # tool wrapper. Both entry points must minimize any currently-active
+    # panel before making the IDE visible.
+    note = _run_on_main(
+        lambda: _ide_app.restore_from_pill(assign_slot=assign_slot))
     return f"Restored the IDE.{note}"
 
 
@@ -1495,18 +1510,31 @@ def maximize_app(which: str) -> str:
 
     prev = _maximized_panel_key
 
-    # Bring it into view first if it's currently minimized -- skip the
-    # normal placement decision (assign_slot=False), since it's about
-    # to be promoted straight to the one active slot below anyway.
+    # A minimized target must go through the ordinary restore path:
+    # that path demotes the currently-active panel before making this
+    # one visible. Bringing the target up first and only minimizing the
+    # previous panel later caused a visible overlap (and the IDE's own
+    # pill click used to bypass the shared placement policy entirely).
     if target_key == "ide":
         try:
             minimized = _run_on_main(lambda: getattr(_ide_app, "_pill", None) is not None)
         except Exception:  # noqa: BLE001
             minimized = False
         if minimized:
-            _restore_ide_panel(assign_slot=False)
+            restored = _restore_ide_panel()
+            if not restored.startswith("Restored the IDE."):
+                return restored
+            note = (f" ({_label_for(prev)} was minimized to make room for it.)"
+                    if prev is not None and prev != target_key else "")
+            return f"{label} is now the maximized, active panel.{note}"
     elif rec.get("minimized"):
-        _panel_manager._restore_one(target_key, rec, assign_slot=False)
+        restored = _panel_manager.restore(target_key)
+        prefix = f"Restored {label}."
+        if not restored.startswith(prefix):
+            return restored
+        note = (f" ({_label_for(prev)} was minimized to make room for it.)"
+                if prev is not None and prev != target_key else "")
+        return f"{label} is now the maximized, active panel.{note}"
 
     bounds = _ide_reference_bounds()
     if target_key == "ide":

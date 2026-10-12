@@ -165,9 +165,10 @@ def check_real_circle_stays_put():
               isinstance(rect, tuple) and len(rect) == 3)
         if rect:
             cx, cy, diameter = rect
+            expected_diameter = max(overlay.width(), overlay.height()) * \
+                overlay._physical_pixel_ratio()
             check("reported diameter matches the circle's real size",
-                  abs(diameter - overlay.width()) < 2
-                  or abs(diameter - overlay.height()) < 2)
+                  abs(diameter - expected_diameter) < 2)
 
         # Simulate "Agent Mode is on" exactly the way the old docking
         # timer used to check it (agent_tools.get_ide_pid() returning a

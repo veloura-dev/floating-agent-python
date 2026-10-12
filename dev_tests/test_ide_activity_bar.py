@@ -138,10 +138,11 @@ def main():
 
     texts = on_ide_thread(lambda: _show_git_on(repo))
     joined = " | ".join(texts)
+    normalized = joined.replace("\\", "/")
     check("Source Control view lists the modified file",
-          "src/main.py" in joined)
+          "src/main.py" in normalized)
     check("Source Control view lists the newly created file",
-          "src/new_feature.py" in joined)
+          "src/new_feature.py" in normalized)
     check("Source Control view shows a change count heading",
           any("CHANGES" in t for t in texts))
 
@@ -157,7 +158,7 @@ def main():
                 t = widget.cget("text")
             except Exception:  # noqa: BLE001
                 t = None
-            if t and "src/main.py" in t:
+            if t and "src/main.py" in t.replace("\\", "/"):
                 return widget
             for c in widget.winfo_children():
                 found = find(c)

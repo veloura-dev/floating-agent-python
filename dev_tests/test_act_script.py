@@ -26,6 +26,7 @@ Requires a display (the IDE is Tkinter-based):
     DISPLAY=:99 QT_QPA_PLATFORM=offscreen python3 dev_tests/test_act_script.py
 """
 import copy
+import json
 import os
 import sys
 import tempfile
@@ -301,16 +302,36 @@ def main():
         )
 
     def planning_seq(provider, system, user, model):
-        return (
-            '{"steps": ['
-            '{"description": "Create greet.py with a greet() function that returns '
-            '\\"Hello, Friday!\\"", "file_hint": "greet.py", '
-            '"verify_command": "grep -q \'Hello, Friday!\' greet.py"}, '
-            '{"description": "Add a __main__ block to greet.py that prints greet()\'s result", '
-            '"file_hint": "greet.py", '
-            '"verify_command": "grep -q \'__main__\' greet.py && python3 greet.py | grep -q \'Hello, Friday!\'"}'
-            ']}'
+        verify_first = (
+            f'"{sys.executable}" -c "from pathlib import Path; '
+            "assert 'Hello, Friday!' in "
+            "Path('greet.py').read_text(encoding='utf-8')\""
         )
+        verify_second = (
+            f'"{sys.executable}" -c "from pathlib import Path; '
+            "text=Path('greet.py').read_text(encoding='utf-8'); "
+            "assert '__main__' in text and 'print(greet())' in text\""
+        )
+        return json.dumps({
+            "steps": [
+                {
+                    "description": (
+                        'Create greet.py with a greet() function that returns '
+                        '"Hello, Friday!"'
+                    ),
+                    "file_hint": "greet.py",
+                    "verify_command": verify_first,
+                },
+                {
+                    "description": (
+                        "Add a __main__ block to greet.py that prints "
+                        "greet()'s result"
+                    ),
+                    "file_hint": "greet.py",
+                    "verify_command": verify_second,
+                },
+            ]
+        })
 
     def coding_seq(provider, system, user, model):
         if "Create greet.py" in system and "Add a __main__" not in system.split("This step:")[1][:80]:
@@ -395,20 +416,13 @@ def main():
           "(that's the part the user actually sees as the chat bubble)",
           "ambiguous about which database" in await_report.split("{{AWAIT_DECISION}}")[0])
 
-    # ---- Part F3: Sequential Rotation is COMPULSORY for the IDE chat path -
-    # Real integration check: agent_overlay.AIWorker(ide_scoped=True).run()
-    # must route through act_script.run_sequential(), unconditionally --
-    # never the normal Gemini/Groq/Mistral single-model chain. Calls
-    # run() directly (not .start()) so everything happens synchronously
-    # on this thread -- a QThread's own signals, connected to plain
-    # functions, fire straight through without needing a pumped Qt
-    # event loop as long as emission and connection both happen on the
-    # same thread (confirmed by this same pattern already working in
-    # test_friday_memory.py's Part C).
+    # ---- Part F3: ordinary IDE chat uses the fast IDE-scoped tool loop;
+    # ACT Script stays available as an explicit tool for deeper tasks.
     try:
         import agent_overlay as ov
         from PySide6.QtWidgets import QApplication
         _qapp = QApplication.instance() or QApplication([])
+        original_keys = (ov.GEMINI_API_KEY, ov.GROQ_API_KEY, ov.MISTRAL_API_KEY)
 
         # This sandbox has no real keys at all (see this file's module
         # docstring) -- AIWorker.run()'s very first line is a real,
@@ -423,17 +437,25 @@ def main():
         # install_stub_providers()/act_script.PROVIDER_KEYS regardless.
         ov.GEMINI_API_KEY = "stub-key-for-this-test-only"
 
-        install_stub_providers(seq_behavior)
         worker = ov.AIWorker("Write a tiny greet.py script with a main block.",
                               parent=None, ide_scoped=True)
+        worker._load_memory_context = lambda: None
+        worker._load_environment_context = lambda: None
+        worker._try_gemini = lambda: (True, "fast IDE reply", None)
+        original_act_script = act_script.run_act_script
+        act_script.run_act_script = lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("ordinary IDE chat must not invoke ACT Script"))
         captured = {}
         worker.succeeded.connect(lambda text: captured.setdefault("ok", text))
         worker.failed.connect(lambda err: captured.setdefault("err", err))
-        worker.run()
-        check("AIWorker(ide_scoped=True).run() compulsorily routes through "
-              "Act Script's Sequential Rotation -- never the plain single-"
-              "model chain",
-              "ok" in captured and "Act Script -- Sequential Rotation" in captured["ok"])
+        try:
+            worker.run()
+        finally:
+            act_script.run_act_script = original_act_script
+        check("ordinary IDE chat returns directly through its scoped provider path",
+              captured.get("ok") == "fast IDE reply")
+        check("ACT Script remains available as an IDE-only tool for deeper work",
+              "ide_run_act_script" in at.IDE_CHAT_TOOL_NAMES)
 
         # And the non-ide_scoped (floating circle) path must NOT be
         # affected by any of this -- it still only tries configured
@@ -441,7 +463,7 @@ def main():
         # keys) fails outright rather than silently running Act Script.
         # Restores the real (empty, in this sandbox) key first, undoing
         # this check's own stub above.
-        ov.GEMINI_API_KEY = ""
+        ov.GEMINI_API_KEY = ov.GROQ_API_KEY = ov.MISTRAL_API_KEY = ""
         install_stub_providers([], thinking_ids=())
         worker2 = ov.AIWorker("hello", parent=None)
         captured2 = {}
@@ -451,6 +473,7 @@ def main():
         check("the floating circle's own (non-ide_scoped) chat path is untouched -- "
               "still the plain single-model chain, not Act Script",
               "err" in captured2 and "Act Script" not in captured2.get("err", ""))
+        ov.GEMINI_API_KEY, ov.GROQ_API_KEY, ov.MISTRAL_API_KEY = original_keys
     except ImportError as exc:
         check(f"PySide6 available for the real AIWorker integration check (skipped: {exc})", False)
 

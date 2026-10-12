@@ -1,4 +1,4 @@
-"""Friday's fully-native Notepad panel -- split out of `app_panels.py`
+"""Friday's fully-native CustomTkinter Notepad panel -- split out of `app_panels.py`
 purely to keep that file (and the conceptually-separate "Notepad is one
 of Friday's own work-surface tools" idea -- see ARCHITECTURE.md §2) in
 its own clearly-named file, with zero change in behavior.
@@ -9,11 +9,8 @@ constructs it.
 See the class's own docstring below for why this exists at all (in
 short: it replaced a fragile real-Notepad-window-embedding path that
 broke multiple times on real Windows hardware -- see
-IDE_CAPABILITY_AUDIT.md Parts 7/8/10). It shares some layout constants
-and one positioning helper with `EmbeddedAppPanel` (app_panels.py's
-panel frame for *real* embedded apps like Calculator), imported from
-there below -- the one deliberate coupling this file has to the rest of
-app_panels.py.
+IDE_CAPABILITY_AUDIT.md Parts 7/8/10). It shares layout constants and a positioning helper through `panel_ui.py`,
+so this module can be imported independently without a circular import.
 """
 
 import os
@@ -22,16 +19,7 @@ import sys
 import time
 import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog
-
-# EmbeddedAppPanel is imported here (rather than this file being merged
-# into app_panels.py) specifically so CustomNotepadPanel's few shared
-# layout constants (DEFAULT_W/H, TITLEBAR_H, BORDER_PX) and its one
-# shared positioning helper (_corner_position) stay a single source of
-# truth instead of being duplicated -- app_panels.py imports
-# CustomNotepadPanel from *this* file only after EmbeddedAppPanel is
-# already fully defined, so this import resolves cleanly despite the
-# two files importing from each other.
-from app_panels import EmbeddedAppPanel  # noqa: E402
+import customtkinter as ctk
 
 # Same small bootstrap app_panels.py itself does, for the same reason:
 # ide.py's MinimizedPill/_ActiveGlowAnimator/color-palette C are already
@@ -43,12 +31,15 @@ if _IDE_DIR not in sys.path:
 import ide as _ide_module  # noqa: E402
 C = _ide_module.C
 _ActiveGlowAnimator = _ide_module._ActiveGlowAnimator
+_update_active_panel_glow = _ide_module._update_active_panel_glow
+import panel_ui
 
 
 class CustomNotepadPanel(tk.Toplevel):
     """Friday's own, fully-native notepad: no real OS process, no
     foreign window, no SetParent reparenting of anything -- just
-    Friday's own tk.Text widget(s) dressed up to look and behave like a
+    Friday's own tk.Text editor widgets in a CustomTkinter surface that
+    looks and behaves like a
     small Markdown-aware text editor (a tab strip, a small Bold/Italic/
     heading/list formatting toolbar, and a status bar), that writes
     real files to disk on request. This exists specifically to retire
@@ -72,13 +63,13 @@ class CustomNotepadPanel(tk.Toplevel):
     save_app_file path) writes a genuine file to the user's real disk.
     """
 
-    DEFAULT_W = EmbeddedAppPanel.DEFAULT_W
-    DEFAULT_H = EmbeddedAppPanel.DEFAULT_H
-    TITLEBAR_H = EmbeddedAppPanel.TITLEBAR_H
+    DEFAULT_W = panel_ui.DEFAULT_PANEL_W
+    DEFAULT_H = panel_ui.DEFAULT_PANEL_H
+    TITLEBAR_H = panel_ui.TITLEBAR_H
     TABBAR_H = 26
     TOOLBAR_H = 30
     STATUSBAR_H = 20
-    BORDER_PX = EmbeddedAppPanel.BORDER_PX
+    BORDER_PX = panel_ui.BORDER_PX
     ZOOM_STEPS = (50, 67, 80, 90, 100, 110, 125, 150, 175, 200, 250, 300)
     HEADING_PREFIXES = {"Body text": "", "Heading 1": "# ",
                          "Heading 2": "## ", "Heading 3": "### "}
@@ -95,7 +86,7 @@ class CustomNotepadPanel(tk.Toplevel):
         super().__init__(master)
         self.title("Notepad")
         self.overrideredirect(True)
-        self.configure(bg="#ffffff")
+        self.configure(bg=C["border_hi"])
         self.is_maximized = False
         self._zoom_pct = 100
         self._on_close_cb = on_close
@@ -103,7 +94,10 @@ class CustomNotepadPanel(tk.Toplevel):
         # same mechanism/rationale as EmbeddedAppPanel's own, see its
         # matching comment and ide.py's _ActiveGlowAnimator docstring.
         self._is_active_panel = False
-        self._active_glow = _ActiveGlowAnimator(self, lambda c: self.configure(bg=c))
+        self._friday_glow_state = "idle"
+        self._friday_glow_is_error = False
+        self._active_glow = _ActiveGlowAnimator(
+            self, lambda c: self.configure(bg=c))
 
         if bounds is not None:
             # See EmbeddedAppPanel.__init__'s matching comment -- the
@@ -112,89 +106,60 @@ class CustomNotepadPanel(tk.Toplevel):
             x, y, w, h = bounds
         else:
             w, h = self.DEFAULT_W, self.DEFAULT_H
-            x, y = EmbeddedAppPanel._corner_position(master, corner_index, w, h)
+            x, y = panel_ui.corner_position(master, corner_index, w, h)
         self.geometry(f"{w}x{h}+{x}+{y}")
         self._default_geometry = (x, y, w, h)
 
         bp = self.BORDER_PX
         # -- titlebar: identical chrome/behavior to EmbeddedAppPanel's --
-        titlebar = tk.Frame(self, bg=C["tabbar"], height=self.TITLEBAR_H)
-        titlebar.pack(side="top", fill="x", padx=bp, pady=(bp, 0))
-        titlebar.pack_propagate(False)
-        tk.Label(titlebar, text="Notepad", bg=C["tabbar"], fg=C["fg"],
-                 font=("Segoe UI", 9, "bold")).pack(side="left", padx=8)
-        btns = tk.Frame(titlebar, bg=C["tabbar"])
-        btns.pack(side="right")
-        min_btn = tk.Label(btns, text="\u2500", bg=C["tabbar"], fg=C["fg_dim"],
-                            font=("Segoe UI", 10), padx=8, cursor="hand2")
-        min_btn.pack(side="left")
-        close_btn = tk.Label(btns, text="\u2715", bg=C["tabbar"], fg=C["fg_dim"],
-                              font=("Segoe UI", 10), padx=8, cursor="hand2")
-        close_btn.pack(side="left")
-        min_btn.bind("<Enter>", lambda _e: min_btn.configure(bg=C["hover"]))
-        min_btn.bind("<Leave>", lambda _e: min_btn.configure(bg=C["tabbar"]))
-        min_btn.bind("<Button-1>", lambda _e: on_minimize())
-        close_btn.bind(
-            "<Enter>", lambda _e: close_btn.configure(bg=C["danger"], fg="#ffffff"))
-        close_btn.bind(
-            "<Leave>", lambda _e: close_btn.configure(bg=C["tabbar"], fg=C["fg_dim"]))
-        close_btn.bind("<Button-1>", lambda _e: on_close())
-
-        self._drag = {"x": 0, "y": 0}
-
-        def _start_drag(e):
-            self._drag["x"], self._drag["y"] = e.x, e.y
-
-        def _do_drag(e):
-            nx = self.winfo_pointerx() - self._drag["x"]
-            ny = self.winfo_pointery() - self._drag["y"]
-            self.geometry(f"+{nx}+{ny}")
-
-        titlebar.bind("<Button-1>", _start_drag)
-        titlebar.bind("<B1-Motion>", _do_drag)
+        panel_ui.build_titlebar(
+            self, C, "Notepad", on_minimize, on_close, self.TITLEBAR_H, bp)
 
         # -- File / Edit / View menu row --
-        menurow = tk.Frame(self, bg=C["tabbar"])
+        menurow = ctk.CTkFrame(self, fg_color=C["tabbar"], corner_radius=0)
         menurow.pack(side="top", fill="x", padx=bp)
         self._build_menu(menurow, "File", self._file_menu_items())
         self._build_menu(menurow, "Edit", self._edit_menu_items())
         self._build_menu(menurow, "View", self._view_menu_items())
 
         # -- tab strip --
-        tabbar = tk.Frame(self, bg=C["tabbar"], height=self.TABBAR_H)
+        tabbar = ctk.CTkFrame(
+            self, fg_color=C["tabbar"], height=self.TABBAR_H, corner_radius=0)
         tabbar.pack(side="top", fill="x", padx=bp)
         tabbar.pack_propagate(False)
-        self._tabs_area = tk.Frame(tabbar, bg=C["tabbar"])
+        self._tabs_area = ctk.CTkFrame(
+            tabbar, fg_color="transparent", corner_radius=0)
         self._tabs_area.pack(side="left", fill="y")
-        add_tab_btn = tk.Label(tabbar, text="+", bg=C["tabbar"], fg=C["fg_dim"],
-                                font=("Segoe UI", 11, "bold"), padx=10, cursor="hand2")
-        add_tab_btn.pack(side="left")
-        add_tab_btn.bind("<Enter>", lambda _e: add_tab_btn.configure(bg=C["hover"]))
-        add_tab_btn.bind("<Leave>", lambda _e: add_tab_btn.configure(bg=C["tabbar"]))
-        add_tab_btn.bind("<Button-1>", lambda _e: self.new_tab())
+        add_tab_btn = ctk.CTkButton(
+            tabbar, text="+", command=self.new_tab, width=32, height=24,
+            fg_color="transparent", hover_color=C["hover"],
+            text_color=C["fg_dim"], font=("Segoe UI", 11, "bold"),
+            corner_radius=6)
+        add_tab_btn.pack(side="left", padx=4)
 
         # -- formatting toolbar --
-        toolbar = tk.Frame(self, bg=C["panel"], height=self.TOOLBAR_H)
+        toolbar = ctk.CTkFrame(
+            self, fg_color=C["panel"], height=self.TOOLBAR_H, corner_radius=0)
         toolbar.pack(side="top", fill="x", padx=bp)
         toolbar.pack_propagate(False)
-        self._heading_var = tk.StringVar(value="Body text")
-        heading_btn = tk.Menubutton(
-            toolbar, textvariable=self._heading_var, bg=C["accent_btn"], fg=C["fg"],
-            activebackground=C["accent_hover"], activeforeground=C["fg"],
-            relief="flat", font=("Segoe UI", 9), padx=6)
-        heading_menu = tk.Menu(heading_btn, tearoff=False, bg=C["panel"], fg=C["fg"])
+        heading_menu = tk.Menu(self, tearoff=False, bg=C["panel"], fg=C["fg"])
         for lbl in ("Body text", "Heading 1", "Heading 2", "Heading 3"):
             heading_menu.add_command(label=lbl, command=lambda l=lbl: self._apply_heading(l))
-        heading_btn.configure(menu=heading_menu)
+        heading_btn = ctk.CTkButton(
+            toolbar, text="Body text",
+            fg_color=C["accent_btn"], text_color=C["fg"],
+            hover_color=C["accent_hover"], font=("Segoe UI", 9),
+            width=112, height=24, corner_radius=6,
+            command=lambda: self._show_menu(heading_menu, heading_btn))
+        self._heading_btn = heading_btn
         heading_btn.pack(side="left", padx=(6, 4), pady=3)
 
         def _tool_btn(text, cmd, font=("Segoe UI", 10)):
-            b = tk.Label(toolbar, text=text, bg=C["panel"], fg=C["fg"], font=font,
-                         padx=7, pady=3, cursor="hand2")
-            b.pack(side="left")
-            b.bind("<Enter>", lambda _e: b.configure(bg=C["hover"]))
-            b.bind("<Leave>", lambda _e: b.configure(bg=C["panel"]))
-            b.bind("<Button-1>", lambda _e: cmd())
+            b = ctk.CTkButton(
+                toolbar, text=text, command=cmd, fg_color="transparent",
+                hover_color=C["hover"], text_color=C["fg"], font=font,
+                width=32, height=24, corner_radius=6)
+            b.pack(side="left", padx=2)
             return b
 
         _tool_btn("\u2630", self.toggle_bullet_list)
@@ -204,28 +169,37 @@ class CustomNotepadPanel(tk.Toplevel):
         _tool_btn("\U0001F517", self.apply_link)
 
         # -- editor area: one Text widget per tab, stacked + raised --
-        self._editor_host = tk.Frame(self, bg=C["editor"])
+        self._editor_host = ctk.CTkFrame(
+            self, fg_color=C["editor"], corner_radius=0)
         self._editor_host.pack(side="top", fill="both", expand=True, padx=bp)
 
         # -- status bar --
-        statusbar = tk.Frame(self, bg=C["statusbar"], height=self.STATUSBAR_H)
+        statusbar = ctk.CTkFrame(
+            self, fg_color=C["statusbar"], height=self.STATUSBAR_H,
+            corner_radius=0)
         statusbar.pack(side="bottom", fill="x", padx=bp, pady=(0, bp))
         statusbar.pack_propagate(False)
-        self._pos_label = tk.Label(statusbar, text="Ln 1, Col 1", bg=C["statusbar"],
-                                    fg=C["status_fg"], font=("Segoe UI", 8))
+        self._pos_label = ctk.CTkLabel(
+            statusbar, text="Ln 1, Col 1", text_color=C["status_fg"],
+            font=("Segoe UI", 8))
         self._pos_label.pack(side="left", padx=8)
-        self._chars_label = tk.Label(statusbar, text="0 characters", bg=C["statusbar"],
-                                      fg=C["status_fg"], font=("Segoe UI", 8))
+        self._chars_label = ctk.CTkLabel(
+            statusbar, text="0 characters", text_color=C["status_fg"],
+            font=("Segoe UI", 8))
         self._chars_label.pack(side="left", padx=8)
-        tk.Label(statusbar, text="Plain text", bg=C["statusbar"], fg=C["status_fg"],
-                 font=("Segoe UI", 8)).pack(side="left", padx=8)
-        self._zoom_label = tk.Label(statusbar, text="100%", bg=C["statusbar"],
-                                     fg=C["status_fg"], font=("Segoe UI", 8))
+        ctk.CTkLabel(
+            statusbar, text="Plain text", text_color=C["status_fg"],
+            font=("Segoe UI", 8)).pack(side="left", padx=8)
+        self._zoom_label = ctk.CTkLabel(
+            statusbar, text="100%", text_color=C["status_fg"],
+            font=("Segoe UI", 8))
         self._zoom_label.pack(side="right", padx=8)
-        tk.Label(statusbar, text="UTF-8", bg=C["statusbar"], fg=C["status_fg"],
-                 font=("Segoe UI", 8)).pack(side="right", padx=8)
-        tk.Label(statusbar, text="Windows (CRLF)", bg=C["statusbar"], fg=C["status_fg"],
-                 font=("Segoe UI", 8)).pack(side="right", padx=8)
+        ctk.CTkLabel(
+            statusbar, text="UTF-8", text_color=C["status_fg"],
+            font=("Segoe UI", 8)).pack(side="right", padx=8)
+        ctk.CTkLabel(
+            statusbar, text="Windows (CRLF)", text_color=C["status_fg"],
+            font=("Segoe UI", 8)).pack(side="right", padx=8)
 
         self._tabs = []
         self._active_tab = None
@@ -256,10 +230,7 @@ class CustomNotepadPanel(tk.Toplevel):
     # Menu plumbing
     # ---------------------------------------------------------------
     def _build_menu(self, parent, label, items):
-        btn = tk.Menubutton(parent, text=label, bg=C["tabbar"], fg=C["fg"],
-                             activebackground=C["hover"], activeforeground=C["fg"],
-                             relief="flat", font=("Segoe UI", 9), padx=8, pady=3)
-        menu = tk.Menu(btn, tearoff=False, bg=C["panel"], fg=C["fg"],
+        menu = tk.Menu(self, tearoff=False, bg=C["panel"], fg=C["fg"],
                         activebackground=C["hover"], activeforeground=C["fg"])
         for item in items:
             if item is None:
@@ -267,9 +238,21 @@ class CustomNotepadPanel(tk.Toplevel):
             else:
                 text, cmd = item
                 menu.add_command(label=text, command=cmd)
-        btn.configure(menu=menu)
-        btn.pack(side="left")
+        btn = ctk.CTkButton(
+            parent, text=label,
+            fg_color="transparent", hover_color=C["hover"],
+            text_color=C["fg"], font=("Segoe UI", 9),
+            width=54, height=26, corner_radius=6,
+            command=lambda: self._show_menu(menu, btn))
+        btn.pack(side="left", padx=2)
         return btn
+
+    @staticmethod
+    def _show_menu(menu, button):
+        menu.tk_popup(
+            button.winfo_rootx(),
+            button.winfo_rooty() + button.winfo_height())
+        menu.grab_release()
 
     def _file_menu_items(self):
         return [
@@ -324,21 +307,24 @@ class CustomNotepadPanel(tk.Toplevel):
         tab = {"path": path, "dirty": False, "text": text,
                "name": os.path.basename(path) if path else "Untitled"}
 
-        frame = tk.Frame(self._tabs_area, bg=C["tab_inactive"], cursor="hand2")
+        frame = ctk.CTkFrame(
+            self._tabs_area, fg_color=C["tab_inactive"], corner_radius=6)
         frame.pack(side="left", fill="y")
-        name_label = tk.Label(frame, text=tab["name"], bg=C["tab_inactive"],
-                               fg=C["tab_in_fg"], font=("Segoe UI", 8), padx=8, pady=5)
-        name_label.pack(side="left")
-        close_x = tk.Label(frame, text="\u2715", bg=C["tab_inactive"],
-                            fg=C["tab_in_fg"], font=("Segoe UI", 7), padx=6, cursor="hand2")
-        close_x.pack(side="left")
+        name_label = ctk.CTkButton(
+            frame, text=tab["name"], command=lambda t=tab: self._select_tab(t),
+            fg_color="transparent", hover_color=C["hover"],
+            text_color=C["tab_in_fg"], font=("Segoe UI", 8),
+            width=90, height=24, corner_radius=6)
+        name_label.pack(side="left", padx=(3, 0), pady=2)
+        close_x = ctk.CTkButton(
+            frame, text="\u2715", command=lambda t=tab: self.close_tab(t),
+            fg_color="transparent", hover_color=C["danger"],
+            text_color=C["tab_in_fg"], font=("Segoe UI", 7),
+            width=24, height=24, corner_radius=6)
+        close_x.pack(side="left", padx=(0, 3), pady=2)
         tab["tab_frame"] = frame
         tab["title_label"] = name_label
         tab["close_btn"] = close_x
-
-        for w in (frame, name_label):
-            w.bind("<Button-1>", lambda _e, t=tab: self._select_tab(t))
-        close_x.bind("<Button-1>", lambda _e, t=tab: self.close_tab(t))
 
         def _on_modified(_e, t=tab):
             if t["text"].edit_modified():
@@ -362,9 +348,11 @@ class CustomNotepadPanel(tk.Toplevel):
             active = t is tab
             bg = C["tab_active"] if active else C["tab_inactive"]
             fg = C["fg"] if active else C["tab_in_fg"]
-            t["tab_frame"].configure(bg=bg)
-            t["title_label"].configure(bg=bg, fg=fg)
-            t["close_btn"].configure(bg=bg, fg=fg)
+            t["tab_frame"].configure(fg_color=bg)
+            t["title_label"].configure(
+                fg_color="transparent", text_color=fg)
+            t["close_btn"].configure(
+                fg_color="transparent", text_color=fg)
         try:
             tab["text"].focus_set()
         except tk.TclError:
@@ -673,7 +661,7 @@ class CustomNotepadPanel(tk.Toplevel):
         self._mark_dirty(self._active_tab)
 
     def _apply_heading(self, label):
-        self._heading_var.set(label)
+        self._heading_btn.configure(text=label)
         prefix = self.HEADING_PREFIXES.get(label, "")
         text = self._active_text_widget()
         if text is None:
@@ -719,6 +707,12 @@ class CustomNotepadPanel(tk.Toplevel):
         self.is_maximized = False
         self.set_active_panel(False)
 
+    def destroy(self):
+        animator = getattr(self, "_active_glow", None)
+        if animator is not None:
+            animator.stop()
+        super().destroy()
+
     def set_active_panel(self, active):
         """Same mechanism/rationale as EmbeddedAppPanel's own method of
         the same name -- see its docstring."""
@@ -726,14 +720,12 @@ class CustomNotepadPanel(tk.Toplevel):
         if active == getattr(self, "_is_active_panel", False):
             return
         self._is_active_panel = active
-        if active:
-            self._active_glow.start()
-        else:
-            self._active_glow.stop()
-            try:
-                self.configure(bg="#ffffff")
-            except tk.TclError:
-                pass
+        _update_active_panel_glow(self)
+
+    def set_friday_status(self, state, is_error=False):
+        self._friday_glow_state = state
+        self._friday_glow_is_error = bool(is_error)
+        _update_active_panel_glow(self)
 
     def _set_geometry_firmly(self, x, y, w, h):
         geom = f"{int(w)}x{int(h)}+{int(x)}+{int(y)}"
@@ -743,5 +735,3 @@ class CustomNotepadPanel(tk.Toplevel):
             self.geometry(geom)
         except tk.TclError:
             pass
-
-

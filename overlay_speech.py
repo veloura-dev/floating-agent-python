@@ -715,8 +715,11 @@ ENABLE_VOICE_MODE = True  # set False to go back to click-to-type-only, no mic u
 WHISPER_MODEL_SIZE = "small.en"
 WHISPER_COMPUTE_TYPE = "int8"   # fast on CPU; use "float16"/"int8_float16" if you have a GPU
 WHISPER_DEVICE = "cpu"
-WHISPER_BEAM_SIZE = 5           # proper beam search (faster-whisper's own default) -- more
-                                 # accurate than greedy decoding at a small speed cost
+WHISPER_BEAM_SIZE = 3           # Faster than the default five-beam search while
+                                 # retaining useful accuracy for conversational input.
+WHISPER_INITIAL_PROMPT = (
+    "The assistant's name is Friday. The wake phrase is Friday."
+)
 
 # Common ways speech recognition mishears "Friday" — add more here if
 # you notice it missing yours. Matched as a substring against the
@@ -749,7 +752,9 @@ COMMAND_CAPTURE_TIMEOUT_MS = 8000  # how long to wait for the actual request aft
 # (0.8s) is tuned for short commands and cuts people off mid-sentence on
 # any normal thinking/breathing pause -- raised here so a pause doesn't
 # get mistaken for the end of what you're saying.
-PAUSE_THRESHOLD_SECONDS = 1.5
+WAKE_PAUSE_THRESHOLD_SECONDS = 0.8
+COMMAND_PAUSE_THRESHOLD_SECONDS = 1.5
+PAUSE_THRESHOLD_SECONDS = COMMAND_PAUSE_THRESHOLD_SECONDS
 
 # Hard ceiling on how long a single utterance can be recorded, regardless
 # of pauses -- generous enough for a full sentence or two without letting
@@ -899,6 +904,7 @@ def _transcribe_locally(whisper_model, audio):
         samples = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
         segments, _info = whisper_model.transcribe(
             samples, language="en", beam_size=WHISPER_BEAM_SIZE,
+            initial_prompt=WHISPER_INITIAL_PROMPT,
             condition_on_previous_text=False)
         return "".join(segment.text for segment in segments).strip()
     except Exception:
@@ -923,6 +929,7 @@ class VoiceListenWorker(QThread):
         super().__init__(parent)
         self._stop_requested = False
         self._paused = True  # CircleOverlay calls resume() once it's ready
+        self._command_capture = False
 
     def stop(self):
         self._stop_requested = True
@@ -932,6 +939,10 @@ class VoiceListenWorker(QThread):
 
     def resume(self):
         self._paused = False
+
+    def set_command_capture(self, active):
+        """Use a longer end-of-phrase pause while waiting for a full request."""
+        self._command_capture = bool(active)
 
     def run(self):
         # PyAudio (needed internally by SpeechRecognition's Microphone) has
@@ -968,7 +979,7 @@ class VoiceListenWorker(QThread):
         try:
             recognizer = sr.Recognizer()
             recognizer.dynamic_energy_threshold = True
-            recognizer.pause_threshold = PAUSE_THRESHOLD_SECONDS
+            recognizer.pause_threshold = WAKE_PAUSE_THRESHOLD_SECONDS
             mic = sr.Microphone()
             with mic as source:
                 recognizer.adjust_for_ambient_noise(source, duration=1)
@@ -1000,6 +1011,11 @@ class VoiceListenWorker(QThread):
                 self.msleep(120)
                 continue
             try:
+                recognizer.pause_threshold = (
+                    COMMAND_PAUSE_THRESHOLD_SECONDS
+                    if self._command_capture
+                    else WAKE_PAUSE_THRESHOLD_SECONDS
+                )
                 with mic as source:
                     audio = recognizer.listen(
                         source, timeout=3, phrase_time_limit=PHRASE_TIME_LIMIT_SECONDS

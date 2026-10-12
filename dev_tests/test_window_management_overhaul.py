@@ -23,9 +23,9 @@ removal of the old 3-side-slot layout).
     active (if anything) in its place. Neither requires the IDE to be
     open to do this (the reference bounds are a fixed formula, not a
     live measurement of the IDE's own window);
-  - every panel (including the IDE's own window) gets the same white
-    border styling, and the one currently-active panel (and only it)
-    shows a pulsing violet "active panel" border.
+  - every panel (including the IDE's own window) uses the same
+    theme-aware frame, and the one currently-active panel (and only it)
+    shows a subtle accent-color pulse.
 
 Part A exercises app_panels.py's maximize/unmaximize/pill-slot-dispatch
 mechanics directly with fakes, no IDE involved at all (mirrors
@@ -203,12 +203,12 @@ def part_a():
     mgr = ap.AppPanelManager(launcher=launcher, window_backend=backend, agent_host=host)
     mgr._ensure_host()
 
-    # ---- white border + maximize_to/restore_default: a scratch panel ----
+    # ---- theme-aware border + maximize_to/restore_default: a scratch panel ----
     scratch = mgr._bridge.call(lambda: ap.EmbeddedAppPanel(
         mgr._root, label="Scratch", on_minimize=lambda: None,
         on_close=lambda: None, corner_index=3))
-    check("EmbeddedAppPanel's own background is white (the border color)",
-          mgr._bridge.call(lambda: scratch.cget("bg")) == "#ffffff")
+    check("EmbeddedAppPanel uses the active theme's frame color",
+          mgr._bridge.call(lambda: scratch.cget("bg")) == ap.C["border_hi"])
     check("EmbeddedAppPanel remembers its own default geometry",
           scratch._default_geometry[2:] == (ap.EmbeddedAppPanel.DEFAULT_W,
                                              ap.EmbeddedAppPanel.DEFAULT_H))
@@ -656,7 +656,7 @@ def part_b():
     msg = at.maximize_app("ide")
     check("maximize_app('ide') refuses cleanly when the IDE isn't open", "isn't open" in msg)
 
-    # ---- white border: the IDE's own window matches every other panel
+    # ---- theme-aware border: the IDE's own window matches every other panel
     # -- checked while it's NOT the active panel (every panel Friday
     # opens becomes active immediately now, so a second panel has to be
     # opened afterwards to demote the IDE back to idle/non-active first,
@@ -666,11 +666,11 @@ def part_b():
     wait_for(lambda: at._run_on_main(lambda: getattr(at._ide_app, "_pill", None) is not None))
     ide_bg = at._run_on_main(lambda: at._ide_app.cget("bg"))
     ide_hl = at._run_on_main(lambda: at._ide_app.cget("highlightbackground"))
-    check("the IDE's own window background is the same white border color",
-          ide_bg.lower() == "#ffffff")
-    check("the IDE's own window outline is white now that it's idle (minimized, not active), "
-          "matching every app panel",
-          ide_hl.lower() == "#ffffff")
+    expected_border = at._run_on_main(lambda: at._ide_app._GLOW_IDLE)
+    check("the IDE's own window background uses its theme border color",
+          ide_bg.lower() == expected_border.lower())
+    check("the IDE's own idle outline uses its theme border color",
+          ide_hl.lower() == expected_border.lower())
 
     # ---- cleanup ----
     at.close_app("ide")
@@ -693,8 +693,8 @@ def part_c():
         a "side slot" of that size for a panel to land in -- every
         panel that's actually open (agent_host wired up) now opens
         straight to full screen instead, per Task 48;
-      - every panel type (not just the IDE) supports a pulsing "this is
-        Friday's current active panel" violet border animation, shown
+      - every panel type (not just the IDE) supports a subtle pulsing
+        accent border animation for Friday's current active panel, shown
         on whichever single panel is Friday's one active panel right
         now, and nowhere else -- see ide.py's _ActiveGlowAnimator and
         IDEApp/EmbeddedAppPanel/CustomNotepadPanel's own
@@ -772,27 +772,59 @@ def part_c():
           wait_for(lambda: not is_active("ide")))
     check("...and has no pulse animation running", not glow_running("ide"))
 
-    msg = at.maximize_app("ide")
+    ide_app = at._ide_app
+    original_deiconify = ide_app.deiconify
+    restore_visibility = {}
+
+    def _track_ide_reveal():
+        if not ide_app.winfo_viewable() and "previous_minimized" not in restore_visibility:
+            restore_visibility["previous_minimized"] = (
+                at._panel_manager._panels["notepad"].get("minimized"))
+        return original_deiconify()
+
+    ide_app.deiconify = _track_ide_reveal
+    try:
+        msg = at.maximize_app("ide")
+    finally:
+        ide_app.deiconify = original_deiconify
+    check("maximize_app minimizes the current panel before revealing the minimized IDE",
+          restore_visibility.get("previous_minimized") is True)
     check("maximize_app('ide') succeeds", "now the maximized" in msg)
     check("the IDE is now flagged active", wait_for(lambda: is_active("ide")))
     check("...with its pulse animation running", wait_for(lambda: glow_running("ide")))
     check("notepad is no longer flagged active (minimized in its place)",
           wait_for(lambda: not is_active("notepad")))
     check("...and its pulse animation stopped", not glow_running("notepad"))
-    check("notepad's border is back to plain white now that it's not active",
-          wait_for(lambda: border_bg("notepad").lower() == "#ffffff"))
+    check("notepad's border is back to the theme frame color now that it's not active",
+          wait_for(lambda: border_bg("notepad").lower() == ap.C["border_hi"]))
 
     at.maximize_app("notepad")
     check("swapping back: notepad is active again", wait_for(lambda: is_active("notepad")))
     check("...and the IDE is not", wait_for(lambda: not is_active("ide")))
-    check("the IDE's pulse animation stopped and its border is white again",
+    check("the IDE's pulse animation stopped and its border is back to the theme color",
           not glow_running("ide") and
-          at._run_on_main(lambda: at._ide_app.cget("bg")).lower() == "#ffffff")
+          at._run_on_main(lambda: at._ide_app.cget("bg")).lower() == ap.C["border_hi"])
 
     at.minimize_app("notepad")
     check("minimizing the active panel clears its active flag too",
           wait_for(lambda: not is_active("notepad")))
     check("...and stops its pulse animation", not glow_running("notepad"))
+
+    # Clicking the IDE's pill is a separate restore path from
+    # restore_app("ide"). It must still promote the IDE through the
+    # shared one-active-panel placement policy, not simply deiconify it.
+    at.restore_app("notepad")
+    check("notepad is active before restoring the IDE from its pill",
+          wait_for(lambda: at._maximized_panel_key == "notepad"
+                   and not at._panel_manager._panels["notepad"].get("minimized")))
+    at._run_on_main(lambda: at._ide_app._pill._on_click())
+    check("clicking the IDE pill promotes the IDE into the active slot",
+          wait_for(lambda: at._maximized_panel_key == "ide"))
+    check("clicking the IDE pill minimizes the previously active Notepad panel",
+          wait_for(lambda: at._panel_manager._panels["notepad"].get("minimized")))
+    check("the IDE pill is gone after restoring it",
+          wait_for(lambda: at._run_on_main(
+              lambda: getattr(at._ide_app, "_pill", None) is None)))
 
     at.close_app("all")
     time.sleep(0.3)

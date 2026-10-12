@@ -104,6 +104,31 @@
     gap: 10px;
     line-height: 1.5;
   }
+  .state-kicker {
+    color: var(--accent);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+  }
+  .state-title {
+    color: var(--fg);
+    font-size: 16px;
+    font-weight: 600;
+  }
+  .state-copy {
+    max-width: 250px;
+    color: var(--fg-dim);
+  }
+  .state-note {
+    max-width: 250px;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--tabbar);
+    color: var(--fg-faint);
+    font-size: 11px;
+  }
   .avatar {
     width: 58px; height: 58px; border-radius: 50%;
     background: linear-gradient(145deg, #3a3a3a, #2a2a2a);
@@ -197,14 +222,19 @@
     <div class="name"><span class="dot"></span>Chat</div>
     <div class="btns"><button class="min">&#9472;</button><button class="close">&#10005;</button></div>
   </div>
-  <div class="body">No messages yet — start typing below.</div>
+  <div class="body">
+    <div class="state-kicker">Preview · Not connected</div>
+    <div class="state-title">A fresh conversation</div>
+    <div class="state-copy">Chat history and sending are not connected to this panel yet.</div>
+    <div class="state-note">For now, use Friday's floating assistant or the IDE Chat panel.</div>
+  </div>
   <div class="input-bar-wrap">
     <div class="chip" id="chip-chat"><span>📄 example.png</span><button onclick="clearChip('chat')">✕</button></div>
     <div class="input-bar">
       <button class="icon-btn" title="Attach a file" onclick="attach('chat')">
         <svg viewBox="0 0 24 24"><path d="M21.44 11.05 12.25 20.24a5.5 5.5 0 0 1-7.78-7.78l9.19-9.19a3.67 3.67 0 0 1 5.19 5.19l-9.2 9.19a1.83 1.83 0 0 1-2.59-2.59l8.49-8.48"/></svg>
       </button>
-      <input type="text" placeholder="Type a message..." />
+      <input type="text" placeholder="Draft a message (sending is unavailable)..." />
       <button class="icon-btn" id="mic-chat" title="Voice input" onclick="toggle('mic-chat')">
         <svg viewBox="0 0 24 24"><path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3Z"/><path d="M19 11a7 7 0 0 1-14 0"/><path d="M12 18v4"/><path d="M8 22h8"/></svg>
       </button>
@@ -221,9 +251,11 @@
     <div class="btns"><button class="min">&#9472;</button><button class="close">&#10005;</button></div>
   </div>
   <div class="body">
+    <div class="state-kicker">Preview · Not connected</div>
     <div class="avatar"><svg viewBox="0 0 24 24"><path d="M12 12a5 5 0 1 0 0-10 5 5 0 0 0 0 10Zm0 2c-5 0-9 2.5-9 6v2h18v-2c0-3.5-4-6-9-6Z"/></svg></div>
-    <div class="you-label">You</div>
-    No profile info yet.
+    <div class="state-title">Your profile</div>
+    <div class="state-copy">Profile editing is not connected to Friday's saved memory yet.</div>
+    <div class="state-note">Nothing entered here will be stored.</div>
   </div>
   <div class="input-bar-wrap">
     <div class="chip" id="chip-profile"><span>📄 example.png</span><button onclick="clearChip('profile')">✕</button></div>
@@ -231,7 +263,7 @@
       <button class="icon-btn" title="Attach a file" onclick="attach('profile')">
         <svg viewBox="0 0 24 24"><path d="M21.44 11.05 12.25 20.24a5.5 5.5 0 0 1-7.78-7.78l9.19-9.19a3.67 3.67 0 0 1 5.19 5.19l-9.2 9.19a1.83 1.83 0 0 1-2.59-2.59l8.49-8.48"/></svg>
       </button>
-      <input type="text" placeholder="Tell Friday something about yourself..." />
+      <input type="text" placeholder="Profile editing is unavailable in this preview..." />
       <button class="icon-btn" id="mic-profile" title="Voice input" onclick="toggle('mic-profile')">
         <svg viewBox="0 0 24 24"><path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3Z"/><path d="M19 11a7 7 0 0 1-14 0"/><path d="M12 18v4"/><path d="M8 22h8"/></svg>
       </button>
@@ -247,14 +279,19 @@
     <div class="name"><span class="dot"></span>Image Generation</div>
     <div class="btns"><button class="min">&#9472;</button><button class="close">&#10005;</button></div>
   </div>
-  <div class="body">Describe the image you want below.<br>(Image generation isn't wired up to a real model yet.)</div>
+  <div class="body">
+    <div class="state-kicker">Preview · Not connected</div>
+    <div class="state-title">Image generation</div>
+    <div class="state-copy">No image provider is available in Friday yet. No prompt will be submitted or image generated.</div>
+    <div class="state-note">Connect a supported image-generation provider to enable this panel.</div>
+  </div>
   <div class="input-bar-wrap">
     <div class="chip" id="chip-image"><span>📄 example.png</span><button onclick="clearChip('image')">✕</button></div>
     <div class="input-bar">
       <button class="icon-btn" title="Attach a file" onclick="attach('image')">
         <svg viewBox="0 0 24 24"><path d="M21.44 11.05 12.25 20.24a5.5 5.5 0 0 1-7.78-7.78l9.19-9.19a3.67 3.67 0 0 1 5.19 5.19l-9.2 9.19a1.83 1.83 0 0 1-2.59-2.59l8.49-8.48"/></svg>
       </button>
-      <input type="text" placeholder="Describe the image you want to generate..." />
+      <input type="text" placeholder="Draft an image prompt (generation unavailable)..." />
       <button class="icon-btn" id="mic-image" title="Voice input" onclick="toggle('mic-image')">
         <svg viewBox="0 0 24 24"><path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3Z"/><path d="M19 11a7 7 0 0 1-14 0"/><path d="M12 18v4"/><path d="M8 22h8"/></svg>
       </button>
@@ -270,14 +307,19 @@
     <div class="name"><span class="dot"></span>Video Generation</div>
     <div class="btns"><button class="min">&#9472;</button><button class="close">&#10005;</button></div>
   </div>
-  <div class="body">Describe the video you want below.<br>(Video generation isn't wired up to a real model yet.)</div>
+  <div class="body">
+    <div class="state-kicker">Preview · Not connected</div>
+    <div class="state-title">Video generation</div>
+    <div class="state-copy">No video provider is available in Friday yet. No prompt will be submitted or video generated.</div>
+    <div class="state-note">Connect a supported video-generation provider to enable this panel.</div>
+  </div>
   <div class="input-bar-wrap">
     <div class="chip" id="chip-video"><span>📄 example.png</span><button onclick="clearChip('video')">✕</button></div>
     <div class="input-bar">
       <button class="icon-btn" title="Attach a file" onclick="attach('video')">
         <svg viewBox="0 0 24 24"><path d="M21.44 11.05 12.25 20.24a5.5 5.5 0 0 1-7.78-7.78l9.19-9.19a3.67 3.67 0 0 1 5.19 5.19l-9.2 9.19a1.83 1.83 0 0 1-2.59-2.59l8.49-8.48"/></svg>
       </button>
-      <input type="text" placeholder="Describe the video you want to generate..." />
+      <input type="text" placeholder="Draft a video prompt (generation unavailable)..." />
       <button class="icon-btn" id="mic-video" title="Voice input" onclick="toggle('mic-video')">
         <svg viewBox="0 0 24 24"><path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3Z"/><path d="M19 11a7 7 0 0 1-14 0"/><path d="M12 18v4"/><path d="M8 22h8"/></svg>
       </button>
@@ -289,9 +331,9 @@
 </div>
 
 <p class="note">
-  This is a <b>live, clickable</b> HTML/CSS/JS mockup — hover a panel, click the mic/speaker icons (they toggle blue,
-  just like the real app's cosmetic active-state), or click the attach icon to see the file chip appear. This is what
-  the 4 panels could look like if their content were rendered with real web tech instead of hand-drawn Tkinter Canvas icons.
+  This is a visual HTML/CSS/JS concept for the native panels. Its controls are illustrative only; chat, profile,
+  image generation, and video generation are not connected here. The live Tk panels now preserve drafts and explain
+  unavailable actions instead of silently discarding input or implying a request was processed.
 </p>
 
 <script>

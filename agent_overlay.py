@@ -406,7 +406,9 @@ from overlay_speech import (  # noqa: E402
     ENABLE_VOICE_MODE, USE_PIPER_VOICE, PIPER_VOICE_MODEL,
     TTS_RATE, TTS_VOLUME, TTS_VOICE_NAME,
     WHISPER_MODEL_SIZE, WHISPER_COMPUTE_TYPE, WHISPER_DEVICE,
-    WHISPER_BEAM_SIZE, WAKE_WORDS, WAKE_ACK_PHRASES,
+    WHISPER_BEAM_SIZE, WHISPER_INITIAL_PROMPT,
+    WAKE_PAUSE_THRESHOLD_SECONDS, COMMAND_PAUSE_THRESHOLD_SECONDS,
+    WAKE_WORDS, WAKE_ACK_PHRASES,
     TEXT_CHAT_TRIGGER_PHRASES, COMMAND_CAPTURE_TIMEOUT_MS,
     PAUSE_THRESHOLD_SECONDS, PHRASE_TIME_LIMIT_SECONDS,
     CONFIRMATION_WORD_THRESHOLD, CONFIRMATION_ACTION_VERBS,
@@ -1120,44 +1122,16 @@ class AIWorker(QThread):
                 )
                 return
 
-        # Standing rule: every request that comes in through the IDE's
-        # own embedded "Friday AI Chat" panel (ide_scoped=True -- see
-        # __init__'s docstring and _ide_chat_ask in this same file) is
-        # compulsorily run through Act Script's Sequential Rotation
-        # pipeline instead of the normal single-model Gemini/Groq/
-        # Mistral fallback chain below. That's deliberate, not a
-        # fallback/opt-in: the IDE's job is writing and fixing real code
-        # with real attention to detail, and Sequential Rotation is what
-        # actually enforces that -- a real plan with a Contract, one
-        # real model per step with fresh read-before-write file reads,
-        # a REAL mechanical (non-LLM) verify after every step, a bounded
-        # fix-forward retry when that verify fails, and a final Review
-        # pass by a model that did not write the work it's judging. A
-        # plain single-model tool-loop has none of those guarantees.
-        # See act_script.py's own module docstring for the full
-        # pipeline. Imported lazily, here, rather than at module level
-        # -- act_script.py itself tries to import this module (to reuse
-        # these exact GEMINI_MODEL/GROQ_MODEL/MISTRAL_MODEL/API-key
-        # constants with zero drift, see its own docstring) -- doing
-        # that import eagerly up here would be circular; by the time
-        # run() actually executes, this module is already fully loaded,
-        # so act_script.py's own import of it succeeds cleanly instead.
-        if self._ide_scoped and not self._summarize_only:
-            try:
-                import act_script
-                reply = act_script.run_act_script(self._prompt, mode="sequential")
-                self.succeeded.emit(reply)
-            except Exception as exc:  # noqa: BLE001
-                self.failed.emit(f"Act Script error: {exc}")
-            return
-
-        # Automatic recall, done here (background thread) rather than in
-        # __init__ (main/UI thread) -- see __init__'s and
-        # _load_memory_context()'s comments. One lookup, shared across
-        # whichever provider(s) below actually end up running, never
-        # blocking anything the user is watching.
-        self._load_memory_context()
-        self._load_environment_context()
+        # Keep IDE chat responsive: use its normal provider tool loop
+        # with the strict IDE-only allow-list. The deeper multi-model
+        # ACT Script pipeline remains available explicitly through
+        # ide_run_act_script for work that warrants its extra planning,
+        # verification, and review calls.
+        if not self._ide_scoped:
+            # Automatic recall and screen-state lookup run here, on the
+            # worker thread, never while the UI is constructing it.
+            self._load_memory_context()
+            self._load_environment_context()
 
         def _attempt(name, try_fn):
             """Runs one provider's _try_X(), wired into the circuit
@@ -2154,6 +2128,8 @@ class CircleOverlay(QWidget):
             self._anim_timer.stop()
             self.input_popup.hide()
             self._capturing_voice_command = False
+            if self._voice_worker is not None:
+                self._voice_worker.set_command_capture(False)
             # Any pending cross-check confirmation is abandoned the moment
             # we land back in Idle for any reason (cancel click, timeout,
             # inactivity) — never let a stale "yes/no" expectation survive
@@ -2215,27 +2191,19 @@ class CircleOverlay(QWidget):
         self._push_ide_status()
 
     def _push_ide_status(self):
-        """Push this state straight into the IDE's own window-border
-        glow, if it's open -- not a poll from the IDE's side.
+        """Push this state into the IDE and active app-panel borders.
         self._state/_last_was_error are already current by the time
         _enter_state calls this.
 
-        Marshaled onto the IDE's own dedicated Tk thread via
-        agent_tools._post_on_main() rather than calling
-        app.set_friday_status() directly: this method can itself now run
-        on the Qt main thread (see _enter_state/_on_qt_main_thread above)
-        or, for the circle's own normal voice/typed flow, on whichever
-        thread last touched the circle's state -- never guaranteed to be
-        the IDE's Tk thread, which is the only thread allowed to touch a
-        Tk widget at all (same reasoning as _TkThreadBridge's own
-        docstring). Fire-and-forget on purpose: a stale/slightly-late
-        border glow is harmless, but blocking Friday's own state
-        machine on the IDE's Tk thread being free right this instant
-        is not a trade worth making for a purely cosmetic cue."""
+        App-panel updates are posted to their Tk host without waiting;
+        the IDE update is separately marshaled to its Tk thread. This
+        method can run on Qt's main thread or another thread, so neither
+        path touches a Tk widget directly."""
+        state, is_error = self._state, bool(self._last_was_error)
+        agent_tools.report_friday_status(state, is_error)
         app = agent_tools._ide_app
         if app is None:
             return
-        state, is_error = self._state, bool(self._last_was_error)
 
         def _push():
             try:
@@ -2306,6 +2274,8 @@ class CircleOverlay(QWidget):
         if self._capturing_voice_command:
             self._capturing_voice_command = False
             self._command_timeout_timer.stop()
+            if self._voice_worker is not None:
+                self._voice_worker.set_command_capture(False)
             if self._awaiting_confirmation:
                 self._on_confirmation_reply(text)
             else:
@@ -2343,6 +2313,7 @@ class CircleOverlay(QWidget):
         self._capturing_voice_command = True
         self._command_timeout_timer.start(COMMAND_CAPTURE_TIMEOUT_MS)
         if self._voice_worker is not None:
+            self._voice_worker.set_command_capture(True)
             self._voice_worker.resume()
 
     def _on_command_capture_timeout(self):
@@ -2351,6 +2322,8 @@ class CircleOverlay(QWidget):
         # than leaving the waveform up indefinitely.
         if self._capturing_voice_command:
             self._capturing_voice_command = False
+            if self._voice_worker is not None:
+                self._voice_worker.set_command_capture(False)
             self._enter_state(STATE_IDLE)
 
     def _handle_voice_command(self, text):

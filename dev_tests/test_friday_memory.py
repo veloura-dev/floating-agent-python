@@ -612,7 +612,8 @@ def part_d():
     print("\n--- Part D: Windows permission-lockdown fix ---")
 
     # 1. Grant succeeds, file stays readable throughout -> inheritance
-    #    gets stripped too, exactly like the old behavior's happy path.
+    #    gets stripped too, with a file-specific grant that does not
+    #    use directory-only inheritance flags.
     calls = []
 
     def fake_run(cmd, **kwargs):
@@ -624,13 +625,26 @@ def part_d():
     with mock.patch.object(os, "name", "nt"), \
          mock.patch.dict(os.environ, {"USERNAME": "Some User"}), \
          mock.patch("subprocess.run", side_effect=fake_run), \
-         mock.patch.object(os, "access", return_value=True):
+         mock.patch("os.path.isdir", return_value=False), \
+         mock.patch("builtins.open", mock.mock_open(read_data=b"ok")):
         memory._lock_down_windows("C:\\fake\\key.bin")
     check("happy path grants before stripping inheritance (grant call first)",
           calls and calls[0][:2] == ["icacls", "C:\\fake\\key.bin"]
-          and "/grant:r" in calls[0])
+          and "/grant:r" in calls[0] and calls[0][-1] == "Some User:F")
     check("happy path still strips inheritance once grant is confirmed",
           any("/inheritance:r" in c for c in calls))
+
+    # Directories retain object/container inheritance flags so newly
+    # created children receive the same restricted permissions.
+    calls = []
+    with mock.patch.object(os, "name", "nt"), \
+         mock.patch.dict(os.environ, {"USERNAME": "Some User"}), \
+         mock.patch("subprocess.run", side_effect=fake_run), \
+         mock.patch("os.path.isdir", return_value=True), \
+         mock.patch("os.scandir"):
+        memory._lock_down_windows("C:\\fake\\memory")
+    check("directory grants retain object/container inheritance flags",
+          calls and calls[0][-1] == "Some User:(OI)(CI)F")
 
     # 2. Grant call fails (nonzero returncode) -> must bail out WITHOUT
     #    ever touching inheritance, which is exactly the fix for the
@@ -666,7 +680,8 @@ def part_d():
     with mock.patch.object(os, "name", "nt"), \
          mock.patch.dict(os.environ, {"USERNAME": "New User"}), \
          mock.patch("subprocess.run", side_effect=fake_run_ok), \
-         mock.patch.object(os, "access", return_value=False):
+         mock.patch("os.path.isdir", return_value=False), \
+         mock.patch("builtins.open", side_effect=PermissionError("denied")):
         memory._lock_down_windows("C:\\fake\\key.bin")
     check("grant succeeds but file unreadable afterward -> inheritance strip skipped",
           len(calls) == 1 and "/grant:r" in calls[0])
@@ -675,18 +690,25 @@ def part_d():
     #    confirmed grant -> must self-undo via /inheritance:e rather
     #    than leaving the file broken.
     calls = []
-    access_results = iter([True, False])  # readable before strip, not after
+    open_results = iter([
+        mock.mock_open(read_data=b"ok")(),
+        PermissionError("denied after inheritance strip"),
+    ])
 
-    def fake_access(path, mode):
+    def fake_open(path, mode):
         try:
-            return next(access_results)
+            result = next(open_results)
         except StopIteration:
-            return False
+            raise PermissionError("still denied")
+        if isinstance(result, BaseException):
+            raise result
+        return result
 
     with mock.patch.object(os, "name", "nt"), \
          mock.patch.dict(os.environ, {"USERNAME": "New User"}), \
          mock.patch("subprocess.run", side_effect=fake_run_ok), \
-         mock.patch.object(os, "access", side_effect=fake_access):
+         mock.patch("os.path.isdir", return_value=False), \
+         mock.patch("builtins.open", side_effect=fake_open):
         memory._lock_down_windows("C:\\fake\\key.bin")
     check("self-undo (/inheritance:e) fires when stripping inheritance broke access",
           any("/inheritance:e" in c for c in calls))

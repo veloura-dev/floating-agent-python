@@ -91,7 +91,7 @@ def main():
         x, y, w, h = agent_app._final_geom
 
         exp_w, exp_h = int(sw * 0.897), int(sh * 0.894)
-        exp_x, exp_y = int(sw * 0.054), int(sh * 0.074)
+        exp_x, exp_y = int(sw * 0.034), int(sh * 0.074)
 
         check("agent-controlled width matches the measured layout exactly",
               w == exp_w)
@@ -107,6 +107,8 @@ def main():
         check("a real margin is left on the top edge", y > 0)
         check("a real margin is left on the right edge", x + w < sw)
         check("a real margin is left on the bottom edge", y + h < sh)
+        check("the right-side clearance exceeds the left-side clearance",
+              sw - (x + w) > x)
     finally:
         close(agent_app)
 
@@ -120,7 +122,7 @@ def main():
         check("standalone window is still centered horizontally",
               abs((x + w / 2) - sw / 2) <= 1)
         check("standalone window is not pinned to the agent-mode exact spot",
-              not (x == int(sw * 0.054) and y == int(sh * 0.074)))
+              not (x == int(sw * 0.034) and y == int(sh * 0.074)))
     finally:
         close(standalone_app)
 
@@ -137,7 +139,7 @@ def main():
               and os.path.basename(placeholder_dir) not in ph_app.title())
 
         ph_app.sidebar.show("explorer")
-        ph_app.update_idletasks()
+        ph_app.update()
         check("a genuinely empty placeholder shows the rich empty state, "
               "not a one-node tree",
               ph_app.sidebar.tree is None)

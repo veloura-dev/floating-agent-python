@@ -65,6 +65,7 @@ import time
 import tkinter as tk
 from shutil import which as _which
 from tkinter import filedialog, messagebox, simpledialog
+import customtkinter as ctk
 
 
 # ide.py's MinimizedPill is already a fully generic small pill-shaped
@@ -79,6 +80,7 @@ if _IDE_DIR not in sys.path:
 import ide as _ide_module  # noqa: E402
 MinimizedPill = _ide_module.MinimizedPill
 C = _ide_module.C
+import panel_ui
 # Same spirit as MinimizedPill above -- ide.py's _ActiveGlowAnimator is
 # already a fully generic pulsing-border-animation driver with no
 # IDE-specific assumptions baked in (it just needs a widget with
@@ -86,6 +88,7 @@ C = _ide_module.C
 # by both EmbeddedAppPanel and CustomNotepadPanel below for their own
 # "I'm Friday's current active/maximized panel" border pulse.
 _ActiveGlowAnimator = _ide_module._ActiveGlowAnimator
+_update_active_panel_glow = _ide_module._update_active_panel_glow
 
 
 KNOWN_APPS = {
@@ -218,23 +221,18 @@ class EmbeddedAppPanel(tk.Toplevel):
     # more -- a panel is either this maximized or minimized to a pill,
     # nothing in between). Matches the size of the reference screenshot
     # the user asked for explicitly (down from the original 480x360).
-    DEFAULT_W = 258
-    DEFAULT_H = 124
-    TITLEBAR_H = 30
-    MARGIN = 24
-    BORDER_PX = 2       # white border thickness around every panel
+    DEFAULT_W = panel_ui.DEFAULT_PANEL_W
+    DEFAULT_H = panel_ui.DEFAULT_PANEL_H
+    TITLEBAR_H = panel_ui.TITLEBAR_H
+    MARGIN = panel_ui.PANEL_MARGIN
+    BORDER_PX = panel_ui.BORDER_PX
 
     def __init__(self, master, label, on_minimize, on_close, corner_index=0,
                  bounds=None):
         super().__init__(master)
         self.title(label)
         self.overrideredirect(True)
-        # White border around the whole panel (per explicit user
-        # request): the Toplevel's own background shows through as a
-        # thin frame around the titlebar/slot below, since both of
-        # those are packed with a small white margin instead of filling
-        # the whole window edge-to-edge.
-        self.configure(bg="#ffffff")
+        self.configure(bg=C["border_hi"])
         self.is_maximized = False
 
         if bounds is not None:
@@ -258,44 +256,8 @@ class EmbeddedAppPanel(tk.Toplevel):
         self._default_geometry = (x, y, w, h)
 
         bp = self.BORDER_PX
-        titlebar = tk.Frame(self, bg=C["tabbar"], height=self.TITLEBAR_H)
-        titlebar.pack(side="top", fill="x", padx=bp, pady=(bp, 0))
-        titlebar.pack_propagate(False)
-        tk.Label(titlebar, text=label, bg=C["tabbar"], fg=C["fg"],
-                 font=("Segoe UI", 9, "bold")).pack(side="left", padx=8)
-
-        btns = tk.Frame(titlebar, bg=C["tabbar"])
-        btns.pack(side="right")
-        self._min_btn = tk.Label(btns, text="\u2500", bg=C["tabbar"],
-                                  fg=C["fg_dim"], font=("Segoe UI", 10),
-                                  padx=8, cursor="hand2")
-        self._min_btn.pack(side="left")
-        self._close_btn = tk.Label(btns, text="\u2715", bg=C["tabbar"],
-                                    fg=C["fg_dim"], font=("Segoe UI", 10),
-                                    padx=8, cursor="hand2")
-        self._close_btn.pack(side="left")
-
-        self._min_btn.bind("<Enter>", lambda _e: self._min_btn.configure(bg=C["hover"]))
-        self._min_btn.bind("<Leave>", lambda _e: self._min_btn.configure(bg=C["tabbar"]))
-        self._min_btn.bind("<Button-1>", lambda _e: on_minimize())
-        self._close_btn.bind(
-            "<Enter>", lambda _e: self._close_btn.configure(bg=C["danger"], fg="#ffffff"))
-        self._close_btn.bind(
-            "<Leave>", lambda _e: self._close_btn.configure(bg=C["tabbar"], fg=C["fg_dim"]))
-        self._close_btn.bind("<Button-1>", lambda _e: on_close())
-
-        self._drag = {"x": 0, "y": 0}
-
-        def _start_drag(e):
-            self._drag["x"], self._drag["y"] = e.x, e.y
-
-        def _do_drag(e):
-            nx = self.winfo_pointerx() - self._drag["x"]
-            ny = self.winfo_pointery() - self._drag["y"]
-            self.geometry(f"+{nx}+{ny}")
-
-        titlebar.bind("<Button-1>", _start_drag)
-        titlebar.bind("<B1-Motion>", _do_drag)
+        panel_ui.build_titlebar(
+            self, C, label, on_minimize, on_close, self.TITLEBAR_H, bp)
 
         # Pulsing "this is Friday's current active panel" border --
         # see ide.py's _ActiveGlowAnimator docstring. Starts/stops from
@@ -308,7 +270,10 @@ class EmbeddedAppPanel(tk.Toplevel):
         # and from AppPanelManager whenever this panel is minimized or
         # closed while it happened to be the active one.
         self._is_active_panel = False
-        self._active_glow = _ActiveGlowAnimator(self, lambda c: self.configure(bg=c))
+        self._friday_glow_state = "idle"
+        self._friday_glow_is_error = False
+        self._active_glow = _ActiveGlowAnimator(
+            self, lambda c: self.configure(bg=c))
 
         # The slot the real app's window gets reparented into (its own
         # native HWND is what embed()/resize_embedded() actually use).
@@ -381,7 +346,7 @@ class EmbeddedAppPanel(tk.Toplevel):
     def set_active_panel(self, active):
         """Tells this panel whether it's currently Friday's single
         active/maximized panel right now, so it can show (active) or
-        stop showing (not active) the pulsing violet active-panel
+        stop showing (not active) the pulsing accent active-panel
         border -- see ide.py's _ActiveGlowAnimator. Called from
         maximize_to()/move_to_slot()/restore_default() above (the
         places this panel becomes/stops being the maximized one), and
@@ -392,14 +357,12 @@ class EmbeddedAppPanel(tk.Toplevel):
         if active == getattr(self, "_is_active_panel", False):
             return
         self._is_active_panel = active
-        if active:
-            self._active_glow.start()
-        else:
-            self._active_glow.stop()
-            try:
-                self.configure(bg="#ffffff")  # back to the plain white border
-            except tk.TclError:
-                pass
+        _update_active_panel_glow(self)
+
+    def set_friday_status(self, state, is_error=False):
+        self._friday_glow_state = state
+        self._friday_glow_is_error = bool(is_error)
+        _update_active_panel_glow(self)
 
     def _set_geometry_firmly(self, x, y, w, h):
         """Sets this Toplevel's geometry and makes sure the *position*
@@ -445,45 +408,15 @@ class EmbeddedAppPanel(tk.Toplevel):
 
     @staticmethod
     def _corner_position(master, index, w, h):
-        try:
-            sw = master.winfo_screenwidth()
-            sh = master.winfo_screenheight()
-        except tk.TclError:
-            sw, sh = 1920, 1080
-        margin = EmbeddedAppPanel.MARGIN
-        corners = [
-            (margin, margin),                    # top-left
-            (max(0, sw - w - margin), margin),   # top-right
-            (margin, max(0, sh - h - margin)),   # bottom-left
-            (max(0, sw - w - margin), max(0, sh - h - margin)),  # bottom-right
-        ]
-        return corners[index % len(corners)]
+        return panel_ui.corner_position(master, index, w, h)
 
 
-# CustomNotepadPanel -- Friday's fully-native Notepad tab -- lives in
-# notepad_panel.py now (split out purely to keep this file a readable
-# size, and to give Notepad its own clearly-named home as one of
-# Friday's own work-surface tools -- see ARCHITECTURE.md §2). Imported
-# with its exact original name so AppPanelManager below (and anything
-# that reaches for `app_panels.CustomNotepadPanel`) keeps working
-# unchanged. Placed here, after EmbeddedAppPanel is fully defined above,
-# because notepad_panel.py imports EmbeddedAppPanel back from this file
-# (their one shared dependency -- see notepad_panel.py's own docstring).
+# Custom panel implementations live in focused modules and are
+# re-exported here to preserve the public app_panels API.
 from notepad_panel import CustomNotepadPanel  # noqa: E402
 
-# SettingsPanel -- Friday's fully-native AI-model/API-key settings
-# panel -- lives in settings_panel.py for the exact same reason
-# CustomNotepadPanel lives in notepad_panel.py (see its own docstring
-# and settings_panel.py's own). Same deferred-import placement, for the
-# same reason: settings_panel.py imports EmbeddedAppPanel back from this
-# file.
 from settings_panel import SettingsPanel  # noqa: E402
 
-# ChatPanel/ProfilePanel/ImageGenPanel/VideoGenPanel -- four more fully-
-# native panels, all four sharing one base class (_TextBoxPanel) in
-# conversation_panels.py -- same deferred-import placement/reasoning as
-# Notepad/Settings above (conversation_panels.py imports EmbeddedAppPanel
-# back from this file too).
 from conversation_panels import (  # noqa: E402
     ChatPanel, ProfilePanel, ImageGenPanel, VideoGenPanel,
 )
@@ -556,16 +489,32 @@ class AppPanelManager:
         """
         with self._lock:
             root, thread = self._root, self._thread
-            self._root = None
-            self._bridge = None
-            self._thread = None
         if root is None or thread is None:
             return
+
+        def _stop_host():
+            with self._lock:
+                panels = list(self._panels.values())
+                self._panels.clear()
+            try:
+                for rec in panels:
+                    self._destroy_widgets(rec)
+            finally:
+                root.quit()
+
         try:
-            root.after(0, root.quit)
+            root.after(0, _stop_host)
         except Exception:  # noqa: BLE001
-            pass
+            try:
+                root.quit()
+            except Exception:  # noqa: BLE001
+                pass
         thread.join(timeout=2.0)
+        with self._lock:
+            if self._root is root:
+                self._root = None
+                self._bridge = None
+                self._thread = None
 
     def _ensure_host(self):
         with self._lock:
@@ -624,7 +573,13 @@ class AppPanelManager:
             widget = rec.get(widget_key)
             if widget is not None:
                 try:
-                    self._bridge.call(widget.destroy)
+                    def _destroy():
+                        animator = getattr(widget, "_active_glow", None)
+                        if animator is not None:
+                            animator.stop()
+                        widget.destroy()
+
+                    self._bridge.call(_destroy)
                 except Exception:  # noqa: BLE001
                     pass
 
@@ -710,6 +665,31 @@ class AppPanelManager:
             return
         try:
             self._bridge.call(lambda: pill.set_status(status))
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _current_friday_status(self):
+        getter = getattr(self._agent_host, "get_friday_status", None)
+        if getter is None:
+            return "idle", False
+        try:
+            return getter()
+        except Exception:  # noqa: BLE001
+            return "idle", False
+
+    def report_friday_status(self, key, state, is_error=False):
+        rec = self._panels.get(key)
+        frame = rec.get("frame") if rec is not None else None
+        bridge = self._bridge
+        if frame is None or bridge is None or rec.get("minimized"):
+            return
+
+        def update():
+            if self._panels.get(key) is rec and not rec.get("minimized"):
+                frame.set_friday_status(state, is_error)
+
+        try:
+            bridge.post(update)
         except Exception:  # noqa: BLE001
             pass
 
@@ -978,22 +958,21 @@ class AppPanelManager:
         label = KNOWN_APPS[key]["label"]
         panel_cls = _CUSTOM_PANEL_CLASSES[key]
         try:
-            panel = self._bridge.call(lambda: panel_cls(
-                self._root, on_minimize=lambda: self.minimize(key),
-                on_close=lambda: self.close(key), corner_index=corner,
-                initial_content=content, bounds=bounds))
+            def create_panel():
+                panel = panel_cls(
+                    self._root, on_minimize=lambda: self.minimize(key),
+                    on_close=lambda: self.close(key), corner_index=corner,
+                    initial_content=content, bounds=bounds)
+                if bounds is not None:
+                    panel.is_maximized = is_maximized
+                    panel.set_active_panel(is_maximized)
+                    if is_maximized:
+                        panel.set_friday_status(*self._current_friday_status())
+                return panel
+
+            panel = self._bridge.call(create_panel)
         except Exception as exc:  # noqa: BLE001
             return f"Couldn't open {label}: {exc}"
-        if bounds is not None:
-            panel.is_maximized = is_maximized
-            # _decide_placement() already ran (and, if this panel is
-            # taking over the one active slot, already minimized
-            # whoever had it) *before* this frame existed -- so its own
-            # _apply_active_panel_flag() call found nothing to flag and
-            # silently no-op'd. Apply it retroactively now that the
-            # frame is actually built, the same fix the IDE's bootstrap
-            # path already needed for the exact same first-panel race.
-            self._bridge.call(lambda: panel.set_active_panel(is_maximized))
         record = {"label": label, "proc": None, "hwnd": None,
                   "minimized": False, "pill": None, "frame": panel,
                   "embedded": True, "embed_note": None, "custom": True,
@@ -1149,7 +1128,12 @@ class AppPanelManager:
         # Same retroactive fix as _open_custom_panel's: this frame
         # didn't exist yet when _decide_placement() first ran (and
         # possibly flagged it active), so apply that decision now.
-        self._bridge.call(lambda: frame.set_active_panel(live_is_maximized))
+        def activate_frame():
+            frame.set_active_panel(live_is_maximized)
+            if live_is_maximized:
+                frame.set_friday_status(*self._current_friday_status())
+
+        self._bridge.call(activate_frame)
         # A minimize() could have raced ahead and already happened on the
         # (until-now un-embedded) panel while embedding was still in
         # flight -- keep the freshly-built frame in sync with that

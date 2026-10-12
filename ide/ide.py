@@ -2,14 +2,14 @@
 # -*- coding: utf-8 -*-
 """
 ================================================================================
-  IDE - a lightweight code editor built entirely with Python's standard
-  library (Tkinter). Intended to be wired up to an AI agent that can read
-  and edit the open source files (agent integration not implemented yet).
+  IDE - a lightweight code editor built with Tkinter and CustomTkinter.
+  Its editor and OS-facing controls stay native Tk; CustomTkinter is used
+  for the application chrome and panel surfaces.
 
       python3 ide.py [optional_folder]
 
   Dark grey theme, grey outlines, frameless translucent floating window.
-  No third-party packages required.
+  CustomTkinter is required for the themed panel surfaces.
 ================================================================================
 """
 
@@ -29,6 +29,10 @@ import subprocess
 import time
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, font as tkfont
+import customtkinter as ctk
+
+ctk.set_appearance_mode("dark")
+ctk.set_default_color_theme("blue")
 
 # ------------------------------------------------------------------ #
 #  Themes                                                             #
@@ -1566,7 +1570,7 @@ def animate_color(widget, option, to, ms=MOTION_MS, steps=MOTION_STEPS):
 # ------------------------------------------------------------------ #
 #  Easing curves -- used by IDEApp._animate_geometry (the open/close   #
 #  "pop" animation below). Each maps t in [0, 1] -> t' in roughly      #
-#  [0, 1] (ease_out_back deliberately overshoots past 1 briefly,       #
+#  [0, 1] (ease_out_back remains available for optional playful motion, #
 #  that's the point of it) and always returns exactly 0 at t=0 and     #
 #  exactly 1 at t=1, so whatever's being interpolated always lands     #
 #  exactly on its target at the end no matter which curve is used.     #
@@ -1582,20 +1586,19 @@ def ease_in_out_cubic(t):
 
 
 def ease_out_back(t, overshoot=1.3):
-    """Decelerates past the target, then springs back to it -- the
-    classic "something popping into existence" curve. Used for the
-    IDE's open animation so growing out of the circle reads as a
-    lively little emergence rather than a mechanical slide into
-    place."""
+    """Decelerates past a target, then springs back for optional playful motion."""
     c3 = overshoot + 1
     t -= 1
     return 1 + c3 * t ** 3 + overshoot * t ** 2
 
 
+def ease_out_cubic(t):
+    """Decelerates smoothly into the final frame without bouncing past it."""
+    return 1 - (1 - t) ** 3
+
+
 def ease_in_cubic(t):
-    """Accelerates smoothly from a standstill -- the natural reverse of
-    ease_out_back: used for the IDE's close animation so it reads as
-    gently, then increasingly, being drawn back into the circle."""
+    """Accelerates smoothly from a standstill for a restrained close motion."""
     return t * t * t
 
 
@@ -1885,10 +1888,11 @@ class ActivityBar(tk.Frame):
         self.pack_propagate(False)
         self._buttons = {}
         self._bars = {}
-        top = tk.Frame(self, bg=C["activity"])
+        top = ctk.CTkFrame(self, fg_color=C["activity"], corner_radius=0)
         top.pack(side="top", fill="x")
         for name, tip in self._ITEMS:
-            holder = tk.Frame(top, bg=C["activity"])
+            holder = ctk.CTkFrame(top, fg_color=C["activity"],
+                                  corner_radius=0)
             holder.pack(side="top", fill="x")
             bar = tk.Frame(holder, bg=C["activity"], width=max(2, band(2)))
             bar.pack(side="left", fill="y")
@@ -1947,12 +1951,14 @@ class SideBar(tk.Frame):
 
     # ---------------- shared chrome ----------------
     def _title(self, text, actions=()):
-        bar = tk.Frame(self, bg=C["sidebar"], height=band(36))
+        bar = ctk.CTkFrame(self, fg_color=C["sidebar"], height=36,
+                           corner_radius=0)
         bar.pack(fill="x")
         bar.pack_propagate(False)
-        tk.Label(bar, text=text, bg=C["sidebar"], fg=C["fg_dim"],
-                 font=(self.app.f_ui[0], *ts(-1, bold=True))
-                 ).pack(side="left", padx=sp("lg"))
+        ctk.CTkLabel(
+            bar, text=text, fg_color="transparent", text_color=C["fg_dim"],
+            font=(self.app.f_ui[0], *ts(-1, bold=True))
+        ).pack(side="left", padx=sp("lg"))
         # actions are packed right-to-left, so reverse for visual order
         for icon, tip, cmd in reversed(actions):
             b = icon_button(bar, icon, size=15, bg=C["sidebar"], cmd=cmd,
@@ -2689,7 +2695,8 @@ class Panel(tk.Frame):
         self.proc = None
         self.history, self.hidx = [], 0
 
-        tabbar = tk.Frame(self, bg=C["panel"], height=30)
+        tabbar = ctk.CTkFrame(self, fg_color=C["panel"], height=30,
+                              corner_radius=0)
         tabbar.pack(fill="x")
         tabbar.pack_propagate(False)
         self._tabs = {}
@@ -2940,13 +2947,17 @@ class StatusBar(tk.Frame):
         self.opacity.bind("<Button-1>", lambda e: app.fade(0.04))
 
     def _item(self, text, side):   # noqa: D401
-        l = tk.Label(self, text=text, bg=C["statusbar"], fg=C["status_fg"],
-                     font=(self.app.f_ui[0], 9))
+        l = ctk.CTkLabel(
+            self, text=text, fg_color=C["statusbar"],
+            text_color=C["status_fg"], font=(self.app.f_ui[0], 9),
+            corner_radius=0)
         l.pack(side=side, padx=8)
         return l
 
     def _pad(self, side):
-        tk.Label(self, text=" ", bg=C["statusbar"]).pack(side=side)
+        ctk.CTkLabel(
+            self, text=" ", fg_color=C["statusbar"], corner_radius=0,
+        ).pack(side=side)
 
     def update(self, buf_name, line, col, modified):
         try:
@@ -2977,7 +2988,7 @@ class StatusBar(tk.Frame):
         except tk.TclError:
             return
         bg, fg = self._AGENT_KIND_COLORS.get(kind, self._AGENT_KIND_COLORS["write"])
-        self.agent.configure(text=f" {text} ", bg=bg, fg=fg)
+        self.agent.configure(text=f" {text} ", fg_color=bg, text_color=fg)
         if self._agent_clear_job:
             try:
                 self.after_cancel(self._agent_clear_job)
@@ -2992,7 +3003,7 @@ class StatusBar(tk.Frame):
                 return
         except tk.TclError:
             return
-        self.agent.configure(text="", bg=C["statusbar"])
+        self.agent.configure(text="", fg_color=C["statusbar"])
 
 
 # ------------------------------------------------------------------ #
@@ -3426,14 +3437,18 @@ class ChatSidePanel(tk.Frame):
         # inside _status_row, so later updates recolor in place instead
         # of appending a new block every time.
 
-        header = tk.Frame(self, bg=C["chat"], height=38)
+        header = ctk.CTkFrame(self, fg_color=C["chat"], height=38,
+                              corner_radius=0)
         header.pack(fill="x", side="top")
         header.pack_propagate(False)
         self._avatar_badge(header, size=22).pack(side="left", padx=(12, 8))
-        tk.Label(header, text="FRIDAY AI CHAT", bg=C["chat"],
-                 fg=C["fg_bright"], font=(app.f_ui[0], 10, "bold")
-                 ).pack(side="left")
-        tk.Frame(self, bg=C["border"], height=1).pack(fill="x", side="top")
+        ctk.CTkLabel(
+            header, text="FRIDAY AI CHAT", fg_color="transparent",
+            text_color=C["fg_bright"], font=(app.f_ui[0], 10, "bold")
+        ).pack(side="left")
+        ctk.CTkFrame(
+            self, fg_color=C["border"], height=1, corner_radius=0
+        ).pack(fill="x", side="top")
 
         # Scrollable message list: a Text widget with each message
         # embedded as a real widget ("window_create") so every bubble can
@@ -3450,14 +3465,12 @@ class ChatSidePanel(tk.Frame):
         vsb.pack(side="right", fill="y")
         self.log.pack(side="left", fill="both", expand=True)
 
-        entry_row = tk.Frame(self, bg=C["chat"])
+        entry_row = ctk.CTkFrame(self, fg_color=C["chat"], corner_radius=0)
         entry_row.pack(fill="x", side="bottom", padx=10, pady=10)
-        self.entry = tk.Entry(entry_row, bg=C["input"], fg=C["fg"],
-                              relief="flat", insertbackground=C["fg"],
-                              highlightthickness=1,
-                              highlightbackground=C["border"],
-                              highlightcolor=C["accent"],
-                              font=(app.f_ui[0], 11))
+        self.entry = ctk.CTkEntry(
+            entry_row, fg_color=C["input"], text_color=C["fg"],
+            border_color=C["border"], border_width=1,
+            font=(app.f_ui[0], 11), corner_radius=8)
         self.entry.insert(0, "")
         self.entry.pack(fill="x", expand=True, side="top", ipady=7)
         self._placeholder = "Ask Friday to build, edit, or explain something..."
@@ -3501,7 +3514,7 @@ class ChatSidePanel(tk.Frame):
         return cv
 
     def _show_placeholder(self):
-        self.entry.configure(fg=C["fg_faint"])
+        self.entry.configure(text_color=C["fg_faint"])
         self.entry.delete(0, "end")
         self.entry.insert(0, self._placeholder)
         self._showing_placeholder = True
@@ -3509,7 +3522,7 @@ class ChatSidePanel(tk.Frame):
     def _clear_placeholder(self, event=None):
         if getattr(self, "_showing_placeholder", False):
             self.entry.delete(0, "end")
-            self.entry.configure(fg=C["fg"])
+            self.entry.configure(text_color=C["fg"])
             self._showing_placeholder = False
 
     def _maybe_restore_placeholder(self, event=None):
@@ -3778,7 +3791,8 @@ class EditorArea(tk.Frame):
         self._loading = False
 
         # tab strip
-        self.tabbar = tk.Frame(self, bg=C["tabbar"], height=34)
+        self.tabbar = ctk.CTkFrame(
+            self, fg_color=C["tabbar"], height=34, corner_radius=0)
         self.tabbar.pack(fill="x")
         self.tabbar.pack_propagate(False)
         self.tabs_row = tk.Frame(self.tabbar, bg=C["tabbar"])
@@ -4374,10 +4388,10 @@ class MinimizedPill(tk.Toplevel):
     shared by both this module and app_panels.py.
     """
 
-    LINE_LEN = 26     # vertical gap between the circle's bottom edge and the pill
+    LINE_LEN = 12     # vertical gap between the circle's bottom edge and the pill
     PILL_W = 112
-    PILL_H = 34
-    STACK_GAP = 8     # vertical gap between consecutive stacked pills
+    PILL_H = 26
+    STACK_GAP = 6     # vertical gap between consecutive stacked pills
     STACK_STEP = LINE_LEN + PILL_H + STACK_GAP
     HOVER_SPEAK_DELAY_MS = 220  # avoids speaking on a quick mouse pass-through
 
@@ -4396,8 +4410,8 @@ class MinimizedPill(tk.Toplevel):
         except tk.TclError:
             pass
 
-        win_w = self.PILL_W + 4
-        win_h = self.LINE_LEN + self.PILL_H + 2
+        win_w = self.PILL_W + 6
+        win_h = self.LINE_LEN + self.PILL_H + 4
         cx, bottom_y = circle_bottom
         x = int(cx - win_w / 2)
         y = int(bottom_y)
@@ -4425,24 +4439,41 @@ class MinimizedPill(tk.Toplevel):
 
         line_x = win_w / 2
         self.canvas.create_line(line_x, 0, line_x, self.LINE_LEN,
-                                 fill=C["border"], width=2)
+                                 fill=C["border_hi"], width=1)
 
-        px1, py1 = 2, self.LINE_LEN
-        px2, py2 = win_w - 2, win_h - 2
+        px1, py1 = 3, self.LINE_LEN + 1
+        px2, py2 = win_w - 3, win_h - 3
         radius = (py2 - py1) / 2  # fully rounded ends -- a true pill
         self._pill_fill = C["panel"]
-        self._pill_hover_fill = C["tab_active"]
+        self._pill_hover_fill = C["hover"]
+        self._pill_shadow = self.canvas.create_polygon(
+            _rounded_rect_points(px1, py1 + 2, px2, py2 + 2, radius),
+            smooth=True, fill=C["activity"], outline="")
         self._pill_shape = self.canvas.create_polygon(
             _rounded_rect_points(px1, py1, px2, py2, radius),
-            smooth=True, fill=self._pill_fill, outline=C["border"])
+            smooth=True, fill=self._pill_fill, outline=C["border"], width=1)
+        center_y = (py1 + py2) / 2
+        self._pill_status_dot = self.canvas.create_oval(
+            px1 + 9, center_y - 3, px1 + 15, center_y + 3,
+            fill=C["fg_faint"], outline="")
+        display_label = {
+            "Image Generation": "Image Gen",
+            "Video Generation": "Video Gen",
+        }.get(label, label)
         self._pill_text = self.canvas.create_text(
-            (px1 + px2) / 2, (py1 + py2) / 2, text=label,
-            fill=C["fg"], font=("Segoe UI", 9, "bold"))
+            px1 + 22, center_y, text=display_label, anchor="w",
+            fill=C["fg"], font=("Segoe UI", 8, "bold"))
+        arrow_x = px2 - 12
+        self._pill_action = self.canvas.create_line(
+            arrow_x - 2, center_y - 4, arrow_x + 2, center_y,
+            arrow_x - 2, center_y + 4, fill=C["fg_dim"], width=1.5,
+            capstyle="round", joinstyle="round")
 
         self.geometry(f"{win_w}x{win_h}+{max(0, x)}+{max(0, y)}")
         self.deiconify()
 
-        for item in (self._pill_shape, self._pill_text):
+        for item in (self._pill_shape, self._pill_status_dot,
+                     self._pill_text, self._pill_action):
             self.canvas.tag_bind(item, "<Enter>", self._on_hover_enter)
             self.canvas.tag_bind(item, "<Leave>", self._on_hover_leave)
             self.canvas.tag_bind(item, "<Button-1>", self._on_click)
@@ -4455,7 +4486,7 @@ class MinimizedPill(tk.Toplevel):
         slot via this, rather than leaving a visible gap where it used
         to be."""
         cx, bottom_y = circle_bottom
-        win_w = self.PILL_W + 4
+        win_w = self.PILL_W + 6
         x = int(cx - win_w / 2)
         y = int(bottom_y)
         try:
@@ -4491,17 +4522,20 @@ class MinimizedPill(tk.Toplevel):
             return
         try:
             self.canvas.itemconfig(self._pill_shape, outline=C[color_key])
+            self.canvas.itemconfig(self._pill_status_dot, fill=C[color_key])
         except tk.TclError:
             pass
 
     def _on_hover_enter(self, _event=None):
         self.canvas.itemconfig(self._pill_shape, fill=self._pill_hover_fill)
+        self.canvas.itemconfig(self._pill_action, fill=C["accent"])
         if self._hover_job is not None:
             self.after_cancel(self._hover_job)
         self._hover_job = self.after(self.HOVER_SPEAK_DELAY_MS, self._announce)
 
     def _on_hover_leave(self, _event=None):
         self.canvas.itemconfig(self._pill_shape, fill=self._pill_fill)
+        self.canvas.itemconfig(self._pill_action, fill=C["fg_dim"])
         if self._hover_job is not None:
             self.after_cancel(self._hover_job)
             self._hover_job = None
@@ -4525,12 +4559,13 @@ class MinimizedPill(tk.Toplevel):
         # is only ever supposed to happen once per pill, no matter how
         # many click events it happens to receive.
         if self._restoring:
-            return
+            return "break"
         self._restoring = True
         if self._hover_job is not None:
             self.after_cancel(self._hover_job)
             self._hover_job = None
         self._on_restore()
+        return "break"
 
 
 class _ActiveGlowAnimator:
@@ -4554,13 +4589,9 @@ class _ActiveGlowAnimator:
     this one animation would be more invasive than it's worth.
     """
 
-    PERIOD_S = 1.6             # one full dim-to-bright-to-dim pulse cycle
-    TICK_MS = 40               # ~25fps -- smooth without being wasteful
-    BASE_COLOR = (168, 85, 247)  # "#a855f7", violet -- used nowhere else
-    #  in the app, so it reads unambiguously as "this is the active
-    #  panel" and never gets confused with Friday's own busy/ok/error
-    #  status colors (blue/green/red) or a plain idle white border.
-    MIN_BRIGHTNESS = 0.55
+    PERIOD_S = 2.6             # one calm dim-to-bright-to-dim pulse cycle
+    TICK_MS = 50               # ~20fps is smooth for a subtle border cue
+    MIN_BRIGHTNESS = 0.78
     MAX_BRIGHTNESS = 1.0
 
     def __init__(self, owner, set_color):
@@ -4573,13 +4604,13 @@ class _ActiveGlowAnimator:
         """No-op if already running -- safe to call repeatedly."""
         if self._job is not None:
             return
-        self._t0 = time.time()
+        self._t0 = time.monotonic()
         self._tick()
 
     def stop(self):
         """Cancels the pulse. Does NOT repaint anything itself -- the
         caller is responsible for restoring whatever static border
-        color should show once the pulse stops (e.g. plain white, or
+        color should show once the pulse stops (e.g. the theme frame, or
         Friday's own current busy/ok/error status color), since that's
         something only the caller actually knows."""
         if self._job is not None:
@@ -4600,10 +4631,10 @@ class _ActiveGlowAnimator:
                 return
         except tk.TclError:
             return
-        phase = (time.time() - self._t0) % self.PERIOD_S / self.PERIOD_S
+        phase = (time.monotonic() - self._t0) % self.PERIOD_S / self.PERIOD_S
         span = self.MAX_BRIGHTNESS - self.MIN_BRIGHTNESS
         brightness = self.MIN_BRIGHTNESS + span * (0.5 - 0.5 * math.cos(phase * 2 * math.pi))
-        r, g, b = self.BASE_COLOR
+        r, g, b = _rgb(C["accent"])
         hexcolor = "#%02x%02x%02x" % (int(r * brightness), int(g * brightness), int(b * brightness))
         try:
             self._set_color(hexcolor)
@@ -4615,16 +4646,42 @@ class _ActiveGlowAnimator:
             pass
 
 
+def _friday_status_color(state, is_error=False):
+    if state == "responding" and is_error:
+        return "#e74c3c"
+    if state in ("listening", "loading"):
+        return "#3b82f6"
+    if state == "responding":
+        return "#2ecc71"
+    return C["border_hi"]
+
+
+def _update_active_panel_glow(panel):
+    """Keep an app panel's frame synchronized with Friday's live state."""
+    active = getattr(panel, "_is_active_panel", False)
+    state = getattr(panel, "_friday_glow_state", "idle")
+    animator = panel._active_glow
+    if active and state == "idle":
+        animator.start()
+        return
+    animator.stop()
+    color = (_friday_status_color(
+        state, getattr(panel, "_friday_glow_is_error", False))
+        if active else C["border_hi"])
+    try:
+        panel.configure(bg=color)
+    except tk.TclError:
+        pass
+
+
 def compute_agent_controlled_bounds(sw, sh):
     """(x, y, w, h) for Friday's own agent-controlled IDE layout --
-    pinned to the exact on-screen layout measured from the user's own
-    reference screenshot: nearly fills the screen, but leaves a clear,
-    deliberate margin on every edge -- a bit more at the top (where
-    Friday's floating circle lives, fixed in the top-right corner) and
-    on the left than at the bottom/right -- so the window never looks
-    like it's touching or crowding the circle. Expressed as fractions
-    of the actual screen size, not a fixed pixel size scaled by DPI, so
-    it lands in exactly the same relative spot on any monitor.
+    nearly fills the screen, but leaves a clear, deliberate margin on
+    every edge -- with extra room on the right for Friday's floating
+    circle and minimized-pill stack. The panel is shifted slightly left
+    to keep that stack clear. Expressed as fractions of the actual
+    screen size, not a fixed pixel size scaled by DPI, so it lands in
+    exactly the same relative spot on any monitor.
 
     Pulled out of IDEApp.__init__ into its own free function so
     agent_tools.py's unified panel-placement system can compute "the
@@ -4637,7 +4694,7 @@ def compute_agent_controlled_bounds(sw, sh):
     """
     w = int(sw * 0.897)
     h = int(sh * 0.894)
-    x = int(sw * 0.054)
+    x = int(sw * 0.034)
     y = int(sh * 0.074)
     return (x, y, w, h)
 
@@ -4646,8 +4703,6 @@ def compute_agent_controlled_bounds(sw, sh):
 #  The application                                                    #
 # ------------------------------------------------------------------ #
 class IDEApp(tk.Tk):
-    _BORDER_WHITE = "#ffffff"  # the IDE's own window border -- see __init__
-
     def __init__(self, start_dir=None, agent_controlled=False, agent_host=None,
                  initial_bounds=None):
         super().__init__()
@@ -4742,11 +4797,8 @@ class IDEApp(tk.Tk):
         self._anim_active = False  # True only mid open/close pop animation
         self._maximized = False
         self._normal_geom = None
-        # White border around the whole IDE window, same as every
-        # app_panels.py panel (Chrome/Notepad/Calculator) -- per explicit
-        # user request that the IDE's own window get the same white
-        # border styling, not just Friday-drawn app panels.
-        self.configure(bg=self._BORDER_WHITE)
+        self._GLOW_IDLE = C["border_hi"]
+        self.configure(bg=C["border_hi"])
         try:
             self.overrideredirect(True)               # no OS title bar
             self.attributes("-alpha", self.opacity)   # translucent
@@ -4756,29 +4808,21 @@ class IDEApp(tk.Tk):
         # managers, so assert it again once the panel is actually on screen.
         self.after(60, self._apply_opacity)
         self.after(400, self._apply_opacity)
-        # Outline around the whole floating panel. Agent-controlled runs
-        # get a thicker ring so it reads as a real "glow" once _apply_glow
-        # starts recoloring it to reflect Friday's state; a plain
-        # `python ide.py` run keeps the old thin static outline. White by
-        # default/idle (see _GLOW_IDLE below), same white border every
-        # other panel gets -- set_friday_status still recolors it to
-        # blue/green/red while actually busy/succeeding/failing, that
-        # functional feedback is unrelated to and unaffected by the
-        # white-border styling change.
+        # A theme-aware outline keeps the floating panel distinct without
+        # the harsh white frame; Friday's live state still takes priority.
         self._glow_thickness = 4 if self._agent_controlled else 1
         try:
             self.configure(highlightthickness=self._glow_thickness,
-                           highlightbackground=self._BORDER_WHITE,
-                           highlightcolor=self._BORDER_WHITE)
+                           highlightbackground=self._GLOW_IDLE,
+                           highlightcolor=self._GLOW_IDLE)
         except tk.TclError:
             pass
         # Pulsing "this is Friday's current active panel" border, shown
         # whenever this IDE is the one sitting in the unified placement
         # system's center/maximized slot *and* Friday's own live status
         # (see set_friday_status below) is idle -- a busy/responding/
-        # error status color always takes priority over the pulse,
-        # exactly like it already took priority over the old plain
-        # static white border. See _ActiveGlowAnimator's own docstring.
+        # error status color always takes priority over the pulse.
+        # See _ActiveGlowAnimator's own docstring.
         self._is_active_panel = False
         self._friday_glow_state = "idle"
         self._friday_glow_is_error = False
@@ -4926,6 +4970,9 @@ class IDEApp(tk.Tk):
                          bg=C["menubar"], highlightthickness=0)
         logo.pack(side="left", padx=(sp("md"), sp("xs")), pady=sp("xs"))
         draw_icon(logo, "logo")
+        tk.Label(bar, text="FRIDAY", bg=C["menubar"], fg=C["fg"],
+                 font=(self.f_ui[0], 9, "bold")).pack(
+                     side="left", padx=(0, sp("md")))
 
         menus = {
             "File": [("New Text File", "Ctrl+N", self.new_file),
@@ -5005,7 +5052,7 @@ class IDEApp(tk.Tk):
             mb = tk.Menubutton(bar, text=label, bg=C["menubar"], fg=C["fg"],
                                activebackground=C["menubar_hover"],
                                activeforeground=C["fg_bright"], bd=0,
-                               padx=10, pady=5, font=self.f_ui,
+                               padx=8, pady=5, font=self.f_ui,
                                highlightthickness=0)
             m = tk.Menu(mb, tearoff=0, bg=C["sidebar"], fg=C["fg"],
                         activebackground=C["list_sel"],
@@ -5025,7 +5072,7 @@ class IDEApp(tk.Tk):
         # center command bar
         center = tk.Frame(bar, bg=C["menubar"])
         center.place(relx=0.58, rely=0.5, anchor="center")
-        self.cmdcenter = tk.Entry(center, width=30, justify="center",
+        self.cmdcenter = tk.Entry(center, width=24, justify="center",
                                   bg=C["input"], fg=C["fg_dim"], relief="flat",
                                   readonlybackground=C["input"],
                                   insertbackground=C["fg_dim"],
@@ -5050,9 +5097,11 @@ class IDEApp(tk.Tk):
         self._winctrl_zone = tk.Frame(right, bg=C["menubar"])
         self._winctrl_zone.pack(side="right", fill="y")
 
-        def wbtn(glyph, cmd, hover="#4a4a4a", fg=C["fg"]):
+        def wbtn(glyph, cmd, hover=None, fg=None):
+            hover = hover or C["menubar_hover"]
+            fg = fg or C["fg_dim"]
             b = tk.Label(self._winctrl_zone, text=glyph, bg=C["menubar"],
-                         fg=fg, font=(self.f_ui[0], 10), width=3,
+                         fg=fg, font=(self.f_ui[0], 10), width=3, padx=2,
                          cursor="hand2")
             b.pack(side="right", fill="y")
             b.bind("<Button-1>", lambda e: cmd())
@@ -5075,7 +5124,7 @@ class IDEApp(tk.Tk):
                          ).pack(side="right", fill="y")
             wbtn("\u2500", self.minimize_to_pill)                 # —
         else:
-            wbtn("\u2715", self.close_window, hover="#c4383f")   # ×
+            wbtn("\u2715", self.close_window, hover=C["danger"])   # ×
             self._max_btn = wbtn("\u25a1", self.toggle_maximize)  # □
             wbtn("\u2500", self.minimize_to_pill)                 # —
         tk.Frame(right, bg=C["border_soft"], width=1).pack(side="right",
@@ -5152,7 +5201,8 @@ class IDEApp(tk.Tk):
         self._grips = None          # stale grip frames die with the tree
         for w in self.winfo_children():
             w.destroy()
-        self.configure(bg=self._BORDER_WHITE)
+        self._GLOW_IDLE = C["border_hi"]
+        self.configure(bg=self._GLOW_IDLE)
 
         self.buffers, self.current = bufs, cur
         self._style_scrollbars()
@@ -5356,8 +5406,7 @@ class IDEApp(tk.Tk):
         choppy/"breaking" feel the previous fixed-step version had.
 
         `easing`, if given, is a t -> t' function (t and t' both
-        conceptually in [0, 1], though an overshoot curve like
-        ease_out_back briefly exceeds that range on purpose) applied to
+        conceptually in [0, 1]) applied to
         the geometry interpolation; defaults to ease_in_out_cubic.
         `from_alpha`/`to_alpha`, if both given, fade -alpha in step
         with the *raw* (un-eased) progress -- deliberately linear, so a
@@ -5482,7 +5531,7 @@ class IDEApp(tk.Tk):
 
         self._animate_geometry(
             (start_x, start_y, size, size), (end_x, end_y, end_w, end_h),
-            duration_ms=340, on_done=_done, easing=ease_out_back,
+            duration_ms=300, on_done=_done, easing=ease_out_cubic,
             from_alpha=0.0, to_alpha=self.opacity)
 
     def _play_close_animation(self, on_done):
@@ -5519,7 +5568,7 @@ class IDEApp(tk.Tk):
 
         self._animate_geometry(
             (cur_x, cur_y, cur_w, cur_h), (end_x, end_y, size, size),
-            duration_ms=260, on_done=_finish, easing=ease_in_cubic,
+            duration_ms=230, on_done=_finish, easing=ease_in_cubic,
             from_alpha=start_alpha, to_alpha=0.0)
 
     # ---------------- unified panel placement (agent_tools.py's shared
@@ -5672,13 +5721,25 @@ class IDEApp(tk.Tk):
         offset = slot_index * MinimizedPill.STACK_STEP
         pill.reposition((cx, cy + offset))
 
-    def restore_from_pill(self):
+    def restore_from_pill(self, assign_slot=True):
         """Reverse of minimize_to_pill(): removes the pill and eases this
         window back out from Friday's circle to exactly the size/position
-        it had right before it was minimized."""
+        it had right before it was minimized. When `assign_slot` is true,
+        uses Friday's shared active-panel placement policy first, so
+        restoring from the pill itself behaves the same as restore_app().
+        """
         pill = getattr(self, "_pill", None)
         if pill is None:
-            return
+            return ""
+        note = ""
+        get_placement = (
+            getattr(self._agent_host, "get_panel_placement", None)
+            if assign_slot and self._agent_host is not None else None
+        )
+        if get_placement is not None:
+            bounds, _is_maximized, note = get_placement("ide")
+            if bounds is not None:
+                self._pre_minimize_geom = bounds
         self._pill = None
         try:
             pill.destroy()
@@ -5712,7 +5773,7 @@ class IDEApp(tk.Tk):
                 self._apply_opacity()
             except tk.TclError:
                 pass
-            return
+            return note
 
         start_x, start_y, size = origin
         try:
@@ -5725,7 +5786,7 @@ class IDEApp(tk.Tk):
                 self._apply_opacity()
             except tk.TclError:
                 pass
-            return
+            return note
         self._anim_active = True
 
         def _done():
@@ -5738,8 +5799,9 @@ class IDEApp(tk.Tk):
 
         self._animate_geometry(
             (start_x, start_y, size, size), (end_x, end_y, end_w, end_h),
-            duration_ms=300, on_done=_done, easing=ease_out_back,
+            duration_ms=260, on_done=_done, easing=ease_out_cubic,
             from_alpha=0.0, to_alpha=self.opacity)
+        return note
 
     def _apply_opacity(self):
         if getattr(self, "_anim_active", False):
@@ -6892,7 +6954,7 @@ class IDEApp(tk.Tk):
     # agent_tools._post_on_main() (see CircleOverlay._push_ide_status) --
     # this method itself can assume it's always running on the Tk thread
     # by the time it's actually called.
-    _GLOW_IDLE = "#ffffff"  # matches every panel's white border when idle
+    _GLOW_IDLE = C["border_hi"]
     _GLOW_BUSY = "#3b82f6"
     _GLOW_OK = "#2ecc71"
     _GLOW_ERR = "#e74c3c"
@@ -6919,8 +6981,7 @@ class IDEApp(tk.Tk):
         # the active-panel pulse (if running) knows whether it's
         # allowed to actually paint right now -- Friday's own live
         # status always wins over the passive "this is the active
-        # panel" cue, same priority the plain static idle-white border
-        # always implicitly had -- and so set_active_panel(False) can
+        # panel" cue -- and so set_active_panel(False) can
         # restore the exact right static color once the pulse stops.
         self._friday_glow_state = state
         self._friday_glow_is_error = is_error
@@ -6950,7 +7011,7 @@ class IDEApp(tk.Tk):
         """Tells this IDE window whether it's currently Friday's single
         active/maximized panel -- the one in the unified placement
         system's center/maximized slot -- so it can show (active) or
-        stop showing (not active) the pulsing violet active-panel
+        stop showing (not active) the pulsing accent active-panel
         border. Called by agent_tools.py every time
         _maximized_panel_key changes. Safe to call repeatedly with the
         same value."""
@@ -6963,8 +7024,9 @@ class IDEApp(tk.Tk):
         else:
             self._active_glow.stop()
             # Repaint immediately with whatever static color Friday's
-            # own live status calls for right now (plain white if
-            # idle), rather than leaving the last mid-pulse violet
+            # own live status calls for right now (the current theme's
+            # subtle border color if
+            # idle), rather than leaving the last mid-pulse accent
             # shade stuck on screen until something else happens to
             # trigger a repaint.
             self.set_friday_status(getattr(self, "_friday_glow_state", "idle"),

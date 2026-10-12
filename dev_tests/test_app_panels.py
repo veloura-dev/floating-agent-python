@@ -684,9 +684,15 @@ def part_c():
     ok, reason = result
     check("embed() reports ok=False when not on this (non-Windows) platform",
           ok is False)
-    check("embed()'s reason is None (not a fabricated error string) when "
-          "it's simply unsupported here, vs an actual Windows failure",
-          reason is None)
+    if backend.is_supported():
+        check("embed() reports a failure for invalid native window handles",
+              ok is False)
+        check("a supported platform provides a reason for the failed embed",
+              bool(reason))
+    else:
+        check("embed()'s reason is None (not a fabricated error string) when "
+              "it's simply unsupported here",
+              reason is None)
 
     # _to_long_ptr_arg: the actual root-cause fix. On a 64-bit process
     # (every realistic target here) it must be a pure no-op -- the bug
@@ -719,7 +725,7 @@ def part_c():
 
 
 def part_d():
-    """CustomNotepadPanel: Friday's own fully-native notepad editor --
+    """CustomNotepadPanel: Friday's own fully-native CustomTkinter notepad --
     tabs, a small Markdown-style formatting toolbar, and real save-to-
     disk -- built to retire the fragile SetParent-based real-Notepad
     embedding path for good (see IDE_CAPABILITY_AUDIT.md Part 11).
@@ -727,6 +733,9 @@ def part_d():
     prototype bugs documented in Parts 7/8/10 can recur for Notepad
     specifically ever again, by construction."""
     host = FakeAgentHost()
+    import tkinter as tk
+    import customtkinter as ctk
+
     mgr = ap.AppPanelManager(launcher=FakeLauncher(), window_backend=FakeWindowBackend(),
                               agent_host=host)
     tmp_home = tempfile.mkdtemp(prefix="friday-notepad-home-")
@@ -737,6 +746,11 @@ def part_d():
         rec = mgr._panels["notepad"]
         frame = rec["frame"]
         bridge = mgr._bridge
+        check("Notepad uses CustomTkinter chrome on a native Tk panel",
+              bridge.call(lambda: isinstance(frame, tk.Toplevel) and
+                          isinstance(frame._titlebar, ctk.CTkFrame)))
+        check("Notepad keeps its native Tk Text editor for editing semantics",
+              bridge.call(lambda: isinstance(frame._active_tab["text"], tk.Text)))
 
         check("a freshly-opened notepad starts with exactly one tab",
               bridge.call(lambda: len(frame._tabs)) == 1)
@@ -888,11 +902,32 @@ def part_d():
         shutil.rmtree(tmp_home, ignore_errors=True)
 
 
+def part_e_shutdown_cleanup():
+    manager = ap.AppPanelManager(
+        launcher=FakeLauncher(),
+        window_backend=FakeWindowBackend(),
+        agent_host=None,
+    )
+    manager.open("notepad")
+    host_thread = manager._thread
+    check("shutdown test opened a live Tk-hosted panel",
+          host_thread is not None and host_thread.is_alive())
+
+    manager.shutdown()
+    check("shutdown clears the manager's Tk-backed panel records",
+          manager._panels == {})
+    check("shutdown stops the dedicated Tk host thread",
+          host_thread is not None and not host_thread.is_alive())
+    check("shutdown releases its Tk host references",
+          manager._root is None and manager._bridge is None and manager._thread is None)
+
+
 def main():
     part_a()
     part_b()
     part_c()
     part_d()
+    part_e_shutdown_cleanup()
 
     n_fail = sum(1 for _, ok in CHECKS if not ok)
     print(f"\n{len(CHECKS) - n_fail}/{len(CHECKS)} checks passed")

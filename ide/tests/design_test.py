@@ -13,6 +13,7 @@ import time  # noqa: E402
 import traceback  # noqa: E402
 import tkinter as tk  # noqa: E402
 import tkinter.messagebox as MB  # noqa: E402
+import customtkinter as ctk  # noqa: E402
 
 MB.showerror = lambda *a, **k: None
 import ide as V  # noqa: E402
@@ -110,6 +111,12 @@ def main():
     chk("accent reads against the tab bar", not weak, weak)
 
     # ---------------- colour maths ----------------
+    panel_easing = [V.ease_out_cubic(i / 10) for i in range(11)]
+    chk("panel motion eases smoothly without overshooting",
+        panel_easing[0] == 0 and panel_easing[-1] == 1
+        and all(0 <= value <= 1 for value in panel_easing)
+        and panel_easing == sorted(panel_easing),
+        panel_easing)
     chk("mix endpoints exact",
         V.mix("#000000", "#ffffff", 0) == "#000000"
         and V.mix("#000000", "#ffffff", 1) == "#ffffff")
@@ -187,6 +194,27 @@ def main():
             time.sleep(0.03)
         chk(f"theme '{th}' rebuilds cleanly",
             app.theme_name == th and app.editor.winfo_exists())
+
+    chk("IDE keeps a native Tk window for its frameless geometry",
+        isinstance(app, tk.Tk))
+    chk("activity bar uses CustomTkinter chrome",
+        isinstance(app.activity_bar.winfo_children()[0], ctk.CTkFrame))
+    chk("sidebar header uses CustomTkinter chrome",
+        any(isinstance(child, ctk.CTkFrame)
+            for child in app.sidebar.winfo_children()))
+    chk("editor tab strip uses CustomTkinter chrome",
+        isinstance(app.editor.tabbar, ctk.CTkFrame))
+    chk("terminal tab strip uses CustomTkinter chrome",
+        isinstance(app.panel.winfo_children()[0], ctk.CTkFrame))
+    chk("status bar uses CustomTkinter labels",
+        isinstance(app.status.branch, ctk.CTkLabel))
+
+    chat = V.ChatSidePanel(app)
+    app.update()
+    chk("IDE chat composer uses a CustomTkinter entry",
+        isinstance(chat.entry, ctk.CTkEntry))
+    chk("IDE chat header uses CustomTkinter chrome",
+        isinstance(chat.winfo_children()[0], ctk.CTkFrame))
     app.open_file(os.path.join(W, "b.txt"))
     app.update()
     chk("editor usable after all switches",

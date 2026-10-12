@@ -15,12 +15,9 @@ exactly where it's added, not just bookkeeping.
 
 Split out into its own file for the same reason notepad_panel.py is its
 own file rather than living in app_panels.py (see that file's own
-docstring): it's a fully native tk.Toplevel panel, conceptually distinct
+docstring): it's a fully native CustomTkinter panel, conceptually distinct
 from the real-process-embedding machinery the rest of app_panels.py is
-about, and it shares the same couple of layout constants/helpers from
-EmbeddedAppPanel (DEFAULT_W/H-style sizing, TITLEBAR_H, BORDER_PX,
-_corner_position) that notepad_panel.py already reuses rather than
-duplicates.
+about. Shared panel geometry and titlebar styling live in panel_ui.py.
 
 Data lives in settings_store.py (encrypted on disk, same mechanism as
 the rest of Friday's memory) and every green-check status shown here
@@ -41,8 +38,7 @@ import threading
 import time
 import tkinter as tk
 from tkinter import messagebox
-
-from app_panels import EmbeddedAppPanel  # noqa: E402 -- shared layout constants/helper
+import customtkinter as ctk
 
 import settings_store
 import settings_checks
@@ -56,6 +52,8 @@ if _IDE_DIR not in sys.path:
 import ide as _ide_module  # noqa: E402
 C = _ide_module.C
 _ActiveGlowAnimator = _ide_module._ActiveGlowAnimator
+_update_active_panel_glow = _ide_module._update_active_panel_glow
+import panel_ui
 
 # Faculties with no real backend integration yet (see module docstring)
 # -- shown with a small honest caption under their header instead of
@@ -95,8 +93,9 @@ class _FieldDialog(tk.Toplevel):
         self._on_submit = on_submit
 
         pad = {"padx": 14, "pady": (10, 0)}
-        tk.Label(self, text=f"{title} \u2014 {faculty}", bg=C["panel"], fg=C["fg"],
-                 font=("Segoe UI", 10, "bold")).pack(anchor="w", **pad)
+        ctk.CTkLabel(
+            self, text=f"{title} \u2014 {faculty}", text_color=C["fg"],
+            font=("Segoe UI", 10, "bold")).pack(anchor="w", **pad)
 
         existing = existing or {}
         self._name_var = tk.StringVar(value=existing.get("name", ""))
@@ -110,32 +109,36 @@ class _FieldDialog(tk.Toplevel):
             "API base URL (optional \u2014 used to verify a custom provider)",
             self._base_url_var)
 
-        tk.Label(self, text="API key", bg=C["panel"], fg=C["fg_dim"],
-                 font=("Segoe UI", 9)).pack(anchor="w", padx=14, pady=(10, 0))
-        key_row = tk.Frame(self, bg=C["panel"])
+        ctk.CTkLabel(
+            self, text="API key", text_color=C["fg_dim"],
+            font=("Segoe UI", 9)).pack(anchor="w", padx=14, pady=(10, 0))
+        key_row = ctk.CTkFrame(self, fg_color="transparent", corner_radius=0)
         key_row.pack(fill="x", padx=14, pady=(2, 0))
-        self._key_entry = tk.Entry(key_row, textvariable=self._key_var, show="\u2022",
-                                    bg=C["input"], fg=C["fg"], insertbackground=C["fg"],
-                                    relief="flat", font=("Segoe UI", 10))
+        self._key_entry = ctk.CTkEntry(
+            key_row, textvariable=self._key_var, show="\u2022",
+            fg_color=C["input"], text_color=C["fg"],
+            font=("Segoe UI", 10), corner_radius=8)
         self._key_entry.pack(side="left", fill="x", expand=True, ipady=4)
         self._show_var = tk.BooleanVar(value=False)
 
         def _toggle_show():
             self._key_entry.configure(show="" if self._show_var.get() else "\u2022")
 
-        tk.Checkbutton(key_row, text="show", variable=self._show_var, command=_toggle_show,
-                        bg=C["panel"], fg=C["fg_dim"], selectcolor=C["panel"],
-                        activebackground=C["panel"], font=("Segoe UI", 8)
-                        ).pack(side="left", padx=(8, 0))
+        ctk.CTkCheckBox(
+            key_row, text="Show", variable=self._show_var, command=_toggle_show,
+            text_color=C["fg_dim"], fg_color=C["accent"],
+            hover_color=C["accent_hover"], border_color=C["border"],
+            font=("Segoe UI", 8), checkbox_width=16, checkbox_height=16,
+        ).pack(side="left", padx=(8, 0))
 
-        btn_row = tk.Frame(self, bg=C["panel"])
+        btn_row = ctk.CTkFrame(self, fg_color="transparent", corner_radius=0)
         btn_row.pack(fill="x", padx=14, pady=14)
-        tk.Button(btn_row, text="Cancel", command=self.destroy, relief="flat",
-                  bg=C["hover"], fg=C["fg"], font=("Segoe UI", 9)
-                  ).pack(side="right", padx=(6, 0))
-        tk.Button(btn_row, text="Save", command=self._submit, relief="flat",
-                  bg=C["accent_btn"], fg=C["fg"], font=("Segoe UI", 9, "bold")
-                  ).pack(side="right")
+        panel_ui.style_button(
+            ctk.CTkButton(btn_row, text="Cancel", command=self.destroy), C
+        ).pack(side="right", padx=(6, 0))
+        panel_ui.style_button(
+            ctk.CTkButton(btn_row, text="Save", command=self._submit), C, "primary"
+        ).pack(side="right")
 
         self.update_idletasks()
         w, h = 420, self.winfo_reqheight()
@@ -147,11 +150,14 @@ class _FieldDialog(tk.Toplevel):
         self.geometry(f"{w}x{h}+{max(0, px)}+{max(0, py)}")
 
     def _labeled_entry(self, label, var):
-        tk.Label(self, text=label, bg=C["panel"], fg=C["fg_dim"],
-                 font=("Segoe UI", 9)).pack(anchor="w", padx=14, pady=(10, 0))
-        tk.Entry(self, textvariable=var, bg=C["input"], fg=C["fg"],
-                  insertbackground=C["fg"], relief="flat", font=("Segoe UI", 10)
-                  ).pack(fill="x", padx=14, pady=(2, 0), ipady=4)
+        ctk.CTkLabel(
+            self, text=label, text_color=C["fg_dim"],
+            font=("Segoe UI", 9)).pack(anchor="w", padx=14, pady=(10, 0))
+        ctk.CTkEntry(
+            self, textvariable=var, fg_color=C["input"], text_color=C["fg"],
+            border_width=1, border_color=C["border"],
+            font=("Segoe UI", 10), corner_radius=8,
+        ).pack(fill="x", padx=14, pady=(4, 0), ipady=6)
 
     def _submit(self):
         name = self._name_var.get().strip()
@@ -178,29 +184,33 @@ class SettingsPanel(tk.Toplevel):
 
     DEFAULT_W = 760
     DEFAULT_H = 600
-    TITLEBAR_H = EmbeddedAppPanel.TITLEBAR_H
-    BORDER_PX = EmbeddedAppPanel.BORDER_PX
+    TITLEBAR_H = panel_ui.TITLEBAR_H
+    BORDER_PX = panel_ui.BORDER_PX
 
     def __init__(self, master, on_minimize, on_close, corner_index=0,
                  initial_content=None, bounds=None):
         super().__init__(master)
         self.title("Settings")
         self.overrideredirect(True)
-        self.configure(bg="#ffffff")
+        self.configure(bg=C["border_hi"])
         self.is_maximized = False
         self._is_active_panel = False
-        self._active_glow = _ActiveGlowAnimator(self, lambda c: self.configure(bg=c))
+        self._friday_glow_state = "idle"
+        self._friday_glow_is_error = False
+        self._active_glow = _ActiveGlowAnimator(
+            self, lambda c: self.configure(bg=c))
 
         if bounds is not None:
             x, y, w, h = bounds
         else:
             w, h = self.DEFAULT_W, self.DEFAULT_H
-            x, y = EmbeddedAppPanel._corner_position(master, corner_index, w, h)
+            x, y = panel_ui.corner_position(master, corner_index, w, h)
         self.geometry(f"{w}x{h}+{x}+{y}")
         self._default_geometry = (x, y, w, h)
 
         self._data = {}
         self._row_widgets = {}  # (faculty, id) -> {"dot":..., "status_lbl":..., ...}
+        self._wheel_widgets = set()
 
         bp = self.BORDER_PX
         # Titlebar (with a real, working close button) is built first,
@@ -209,52 +219,26 @@ class SettingsPanel(tk.Toplevel):
         # (a corrupted settings file, a missing dependency, ...), this
         # panel is never left on screen as an inert, un-closeable blank
         # window; see the try/except further down.
-        titlebar = tk.Frame(self, bg=C["tabbar"], height=self.TITLEBAR_H)
-        titlebar.pack(side="top", fill="x", padx=bp, pady=(bp, 0))
-        titlebar.pack_propagate(False)
-        tk.Label(titlebar, text="Settings \u2014 AI Models", bg=C["tabbar"], fg=C["fg"],
-                 font=("Segoe UI", 9, "bold")).pack(side="left", padx=8)
-        btns = tk.Frame(titlebar, bg=C["tabbar"])
-        btns.pack(side="right")
-        min_btn = tk.Label(btns, text="\u2500", bg=C["tabbar"], fg=C["fg_dim"],
-                            font=("Segoe UI", 10), padx=8, cursor="hand2")
-        min_btn.pack(side="left")
-        close_btn = tk.Label(btns, text="\u2715", bg=C["tabbar"], fg=C["fg_dim"],
-                              font=("Segoe UI", 10), padx=8, cursor="hand2")
-        close_btn.pack(side="left")
-        min_btn.bind("<Enter>", lambda _e: min_btn.configure(bg=C["hover"]))
-        min_btn.bind("<Leave>", lambda _e: min_btn.configure(bg=C["tabbar"]))
-        min_btn.bind("<Button-1>", lambda _e: on_minimize())
-        close_btn.bind("<Enter>", lambda _e: close_btn.configure(bg=C["danger"], fg="#ffffff"))
-        close_btn.bind("<Leave>", lambda _e: close_btn.configure(bg=C["tabbar"], fg=C["fg_dim"]))
-        close_btn.bind("<Button-1>", lambda _e: on_close())
-
-        self._drag = {"x": 0, "y": 0}
-
-        def _start_drag(e):
-            self._drag["x"], self._drag["y"] = e.x, e.y
-
-        def _do_drag(e):
-            nx = self.winfo_pointerx() - self._drag["x"]
-            ny = self.winfo_pointery() - self._drag["y"]
-            self.geometry(f"+{nx}+{ny}")
-
-        titlebar.bind("<Button-1>", _start_drag)
-        titlebar.bind("<B1-Motion>", _do_drag)
+        panel_ui.build_titlebar(
+            self, C, "Settings \u2014 AI Models", on_minimize, on_close,
+            self.TITLEBAR_H, bp)
 
         # -- a one-line subheader + "Check all" --
-        sub = tk.Frame(self, bg=C["panel"])
+        sub = ctk.CTkFrame(self, fg_color=C["panel"], corner_radius=0)
         sub.pack(side="top", fill="x", padx=bp)
-        tk.Label(sub, text="API keys are masked below. Checking a model makes a real,"
-                           " silent call to its API before it's shown as connected.",
-                 bg=C["panel"], fg=C["fg_dim"], font=("Segoe UI", 8), wraplength=560,
-                 justify="left").pack(side="left", padx=8, pady=6)
-        tk.Button(sub, text="Check all", command=self._check_all, relief="flat",
-                  bg=C["accent_btn"], fg=C["fg"], font=("Segoe UI", 8, "bold")
-                  ).pack(side="right", padx=8, pady=6)
+        ctk.CTkLabel(
+            sub, text="API keys are masked below. Checking a model makes a real,"
+                     " silent call to its API before it's shown as connected.",
+            text_color=C["fg_dim"], font=("Segoe UI", 9), wraplength=560,
+            justify="left").pack(side="left", padx=8, pady=6)
+        panel_ui.style_button(
+            ctk.CTkButton(sub, text="Check all", command=self._check_all),
+            C, "primary"
+        ).pack(side="right", padx=8, pady=6)
 
         # -- scrollable body --
-        body_host = tk.Frame(self, bg=C["editor"])
+        body_host = ctk.CTkFrame(
+            self, fg_color=C["editor"], corner_radius=0)
         body_host.pack(side="top", fill="both", expand=True, padx=bp, pady=(0, bp))
         self._canvas = tk.Canvas(body_host, bg=C["editor"], highlightthickness=0,
                                   bd=0)
@@ -262,7 +246,8 @@ class SettingsPanel(tk.Toplevel):
         self._canvas.configure(yscrollcommand=vsb.set)
         self._canvas.pack(side="left", fill="both", expand=True)
         vsb.pack(side="right", fill="y")
-        self._body = tk.Frame(self._canvas, bg=C["editor"])
+        self._body = ctk.CTkFrame(
+            self._canvas, fg_color=C["editor"], corner_radius=0)
         self._body_window = self._canvas.create_window((0, 0), window=self._body,
                                                          anchor="nw")
 
@@ -270,16 +255,14 @@ class SettingsPanel(tk.Toplevel):
             self._canvas.configure(scrollregion=self._canvas.bbox("all"))
 
         def _on_canvas_configure(e):
-            self._canvas.itemconfigure(self._body_window, width=e.width)
+            self._body.configure(width=e.width)
 
         self._body.bind("<Configure>", _on_body_configure)
         self._canvas.bind("<Configure>", _on_canvas_configure)
 
-        def _on_wheel(e):
-            delta = -1 if e.delta > 0 else 1
-            self._canvas.yview_scroll(delta, "units")
-
-        self._canvas.bind_all("<MouseWheel>", _on_wheel, add="+")
+        self._canvas.bind("<MouseWheel>", self._on_mousewheel, add="+")
+        self._canvas.bind("<Button-4>", self._on_mousewheel, add="+")
+        self._canvas.bind("<Button-5>", self._on_mousewheel, add="+")
 
         try:
             self._data = settings_store.load()
@@ -314,99 +297,159 @@ class SettingsPanel(tk.Toplevel):
         the time this can run."""
         for child in self._body.winfo_children():
             child.destroy()
-        tk.Label(self._body, text="Settings couldn't fully load.", bg=C["editor"],
-                  fg=C["danger"], font=("Segoe UI", 11, "bold")
-                  ).pack(anchor="w", padx=14, pady=(16, 4))
-        tk.Label(self._body, text=str(exc), bg=C["editor"], fg=C["fg_dim"],
-                  font=("Segoe UI", 9), wraplength=640, justify="left"
-                  ).pack(anchor="w", padx=14)
-        tk.Label(self._body, text="Close this panel and try opening Settings again -- "
-                                    "if it keeps happening, check the terminal Friday "
-                                    "was started from for the full error.",
-                  bg=C["editor"], fg=C["fg_faint"], font=("Segoe UI", 8),
-                  wraplength=640, justify="left").pack(anchor="w", padx=14, pady=(8, 0))
+        ctk.CTkLabel(
+            self._body, text="Settings couldn't fully load.",
+            text_color=C["danger"], font=("Segoe UI", 11, "bold"),
+        ).pack(anchor="w", padx=14, pady=(16, 4))
+        ctk.CTkLabel(
+            self._body, text=str(exc), text_color=C["fg_dim"],
+            font=("Segoe UI", 9), wraplength=640, justify="left",
+        ).pack(anchor="w", padx=14)
+        ctk.CTkLabel(
+            self._body,
+            text="Close this panel and try opening Settings again -- "
+                 "if it keeps happening, check the terminal Friday "
+                 "was started from for the full error.",
+            text_color=C["fg_faint"], font=("Segoe UI", 8),
+            wraplength=640, justify="left",
+        ).pack(anchor="w", padx=14, pady=(8, 0))
 
     # ---------------------------------------------------------------
     # Rendering
     # ---------------------------------------------------------------
+    def _on_mousewheel(self, event):
+        if getattr(event, "num", None) == 4:
+            delta = -1
+        elif getattr(event, "num", None) == 5:
+            delta = 1
+        else:
+            delta = -1 if event.delta > 0 else 1
+        self._canvas.yview_scroll(delta, "units")
+        return "break"
+
     def _render_all(self):
-        for child in self._body.winfo_children():
-            child.destroy()
+        self._wheel_widgets.clear()
+        old_sections = tuple(self._body.winfo_children())
+        for section in old_sections:
+            section.pack_forget()
+        if old_sections:
+            self.after_idle(
+                lambda sections=old_sections: self._destroy_sections(sections))
         self._row_widgets.clear()
         for faculty in settings_store.FACULTIES:
             self._render_faculty(faculty)
+        self._bind_mousewheel(self._body)
+
+    @staticmethod
+    def _destroy_sections(sections):
+        for section in sections:
+            if section.winfo_exists():
+                section.destroy()
+
+    def _bind_mousewheel(self, widget):
+        surface = (widget._canvas if isinstance(widget, ctk.CTkBaseClass)
+                   else widget)
+        self._wheel_widgets.add(surface)
+        surface.bind("<MouseWheel>", self._on_mousewheel, add="+")
+        surface.bind("<Button-4>", self._on_mousewheel, add="+")
+        surface.bind("<Button-5>", self._on_mousewheel, add="+")
+        for child in widget.winfo_children():
+            self._bind_mousewheel(child)
 
     def _render_faculty(self, faculty):
-        section = tk.Frame(self._body, bg=C["editor"])
-        section.pack(side="top", fill="x", pady=(10, 4), padx=10)
+        section = ctk.CTkFrame(
+            self._body, fg_color=C["panel"], border_width=1,
+            border_color=C["border"], corner_radius=10)
+        section.pack(side="top", fill="x", pady=(8, 4), padx=10)
 
-        header = tk.Frame(section, bg=C["editor"])
-        header.pack(side="top", fill="x")
-        tk.Label(header, text=faculty, bg=C["editor"], fg=C["fg_bright"],
-                 font=("Segoe UI", 11, "bold")).pack(side="left")
-        tk.Button(header, text="+ Add model", relief="flat", bg=C["accent_btn"],
-                  fg=C["fg"], font=("Segoe UI", 8, "bold"),
-                  command=lambda f=faculty: self._open_add_dialog(f)
-                  ).pack(side="right")
+        header = ctk.CTkFrame(
+            section, fg_color="transparent", corner_radius=0)
+        header.pack(side="top", fill="x", padx=12, pady=(10, 6))
+        ctk.CTkLabel(
+            header, text=faculty, text_color=C["fg_bright"],
+            font=("Segoe UI", 11, "bold")).pack(side="left")
+        panel_ui.style_button(
+            ctk.CTkButton(
+                header, text="+ Add model",
+                command=lambda f=faculty: self._open_add_dialog(f)),
+            C, "secondary"
+        ).pack(side="right")
 
         if faculty in _SCAFFOLD_ONLY_FACULTIES:
-            tk.Label(section, bg=C["editor"], fg=C["fg_faint"], font=("Segoe UI", 8),
-                      justify="left", wraplength=640, anchor="w",
-                      text=("Friday doesn't call out to a real " + faculty.lower() +
-                            " provider yet \u2014 entries here are saved for when that "
-                            "lands, and \"Check\" still makes a real reachability call "
-                            "against whatever you add.")
-                      ).pack(side="top", fill="x", pady=(0, 4))
+            ctk.CTkLabel(
+                section, text=("Friday doesn't call out to a real " + faculty.lower() +
+                               " provider yet \u2014 entries here are saved for when that "
+                               "lands, and \"Check\" still makes a real reachability call "
+                               "against whatever you add."),
+                text_color=C["fg_faint"], font=("Segoe UI", 9),
+                justify="left", wraplength=640, anchor="w",
+            ).pack(side="top", fill="x", padx=12, pady=(0, 8))
 
-        rows_host = tk.Frame(section, bg=C["editor"])
-        rows_host.pack(side="top", fill="x")
+        rows_host = ctk.CTkFrame(
+            section, fg_color="transparent", corner_radius=0)
+        rows_host.pack(side="top", fill="x", padx=8, pady=(0, 8))
 
         entries = self._data.get(faculty, [])
         if not entries:
-            tk.Label(rows_host, text="No models added yet.", bg=C["editor"],
-                      fg=C["fg_faint"], font=("Segoe UI", 9, "italic")
-                      ).pack(side="top", anchor="w", pady=4)
+            ctk.CTkLabel(
+                rows_host, text="No models added yet.",
+                text_color=C["fg_faint"], font=("Segoe UI", 9, "italic"),
+            ).pack(side="top", anchor="w", pady=4)
         for entry in entries:
             self._render_row(rows_host, faculty, entry)
 
-        tk.Frame(section, bg=C["border_soft"], height=1).pack(side="top", fill="x",
-                                                                 pady=(8, 0))
+        ctk.CTkFrame(
+            section, fg_color=C["border_soft"], height=1, corner_radius=0,
+        ).pack(side="top", fill="x", padx=12, pady=(0, 1))
 
     def _render_row(self, parent, faculty, entry):
-        row = tk.Frame(parent, bg=C["panel"])
-        row.pack(side="top", fill="x", pady=2)
+        row = ctk.CTkFrame(
+            parent, fg_color=C["chat"], corner_radius=8)
+        row.pack(side="top", fill="x", pady=3)
 
-        dot = tk.Label(row, text="\u25cf", bg=C["panel"], fg=C["fg_faint"],
-                        font=("Segoe UI", 10))
-        dot.pack(side="left", padx=(6, 4), pady=6)
+        dot = ctk.CTkLabel(
+            row, text="\u25cf", text_color=C["fg_faint"],
+            font=("Segoe UI", 10))
+        dot.pack(side="left", padx=(10, 6), pady=8)
 
-        name_col = tk.Frame(row, bg=C["panel"])
+        name_col = ctk.CTkFrame(
+            row, fg_color="transparent", corner_radius=0)
         name_col.pack(side="left", fill="x", expand=True, pady=4)
-        tk.Label(name_col, text=entry["name"], bg=C["panel"], fg=C["fg"],
-                  font=("Segoe UI", 9, "bold")).pack(side="top", anchor="w")
+        ctk.CTkLabel(
+            name_col, text=entry["name"], text_color=C["fg"],
+            font=("Segoe UI", 10, "bold")).pack(side="top", anchor="w")
         model_txt = entry.get("model") or "\u2014"
-        tk.Label(name_col, text=model_txt, bg=C["panel"], fg=C["fg_dim"],
-                  font=("Segoe UI", 8)).pack(side="top", anchor="w")
+        ctk.CTkLabel(
+            name_col, text=model_txt, text_color=C["fg_dim"],
+            font=("Segoe UI", 9)).pack(side="top", anchor="w")
 
-        key_lbl = tk.Label(row, text=settings_store.mask_key(entry.get("api_key", "")),
-                            bg=C["panel"], fg=C["fg_dim"], font=("Consolas", 9))
+        key_lbl = ctk.CTkLabel(
+            row, text=settings_store.mask_key(entry.get("api_key", "")),
+            text_color=C["fg_dim"], font=("Consolas", 9))
         key_lbl.pack(side="left", padx=10)
 
-        status_lbl = tk.Label(row, bg=C["panel"], font=("Segoe UI", 9, "bold"))
+        status_lbl = ctk.CTkLabel(
+            row, text="", font=("Segoe UI", 9, "bold"))
         status_lbl.pack(side="left", padx=(0, 10))
 
-        check_btn = tk.Button(row, text="Check", relief="flat", bg=C["hover"],
-                               fg=C["fg"], font=("Segoe UI", 8),
-                               command=lambda f=faculty, e=entry: self._run_check(f, e))
-        check_btn.pack(side="left", padx=2)
-        tk.Button(row, text="Edit", relief="flat", bg=C["hover"], fg=C["fg"],
-                  font=("Segoe UI", 8),
-                  command=lambda f=faculty, e=entry: self._open_edit_dialog(f, e)
-                  ).pack(side="left", padx=2)
-        tk.Button(row, text="Remove", relief="flat", bg=C["hover"], fg=C["danger"],
-                  font=("Segoe UI", 8),
-                  command=lambda f=faculty, e=entry: self._remove(f, e)
-                  ).pack(side="left", padx=(2, 6))
+        check_btn = panel_ui.style_button(
+            ctk.CTkButton(
+                row, text="Check",
+                command=lambda f=faculty, e=entry: self._run_check(f, e)),
+            C)
+        check_btn.pack(side="left", padx=2, pady=5)
+        panel_ui.style_button(
+            ctk.CTkButton(
+                row, text="Edit",
+                command=lambda f=faculty, e=entry: self._open_edit_dialog(f, e)),
+            C
+        ).pack(side="left", padx=2, pady=5)
+        panel_ui.style_button(
+            ctk.CTkButton(
+                row, text="Remove",
+                command=lambda f=faculty, e=entry: self._remove(f, e)),
+            C, "danger"
+        ).pack(side="left", padx=(2, 8), pady=5)
 
         self._row_widgets[(faculty, entry["id"])] = {
             "dot": dot, "status_lbl": status_lbl, "key_lbl": key_lbl,
@@ -420,8 +463,8 @@ class SettingsPanel(tk.Toplevel):
         if not widgets:
             return
         glyph, color, label = _STATUS_STYLE.get(status, _STATUS_STYLE["unknown"])
-        widgets["dot"].configure(fg=color)
-        widgets["status_lbl"].configure(text=f"{glyph} {label}", fg=color)
+        widgets["dot"].configure(text_color=color)
+        widgets["status_lbl"].configure(text=f"{glyph} {label}", text_color=color)
         tip = detail or label
         for key in ("status_lbl", "dot"):
             try:
@@ -500,7 +543,7 @@ class SettingsPanel(tk.Toplevel):
     # ---------------------------------------------------------------
     # Panel-manager protocol: same methods/semantics as
     # CustomNotepadPanel's own (see its docstring) -- withdraw/deiconify/
-    # destroy come for free from tk.Toplevel.
+    # destroy come from this native Tk Toplevel.
     # ---------------------------------------------------------------
     def restore_default(self):
         x, y, w, h = self._default_geometry
@@ -517,14 +560,12 @@ class SettingsPanel(tk.Toplevel):
         if active == getattr(self, "_is_active_panel", False):
             return
         self._is_active_panel = active
-        if active:
-            self._active_glow.start()
-        else:
-            self._active_glow.stop()
-            try:
-                self.configure(bg="#ffffff")
-            except tk.TclError:
-                pass
+        _update_active_panel_glow(self)
+
+    def set_friday_status(self, state, is_error=False):
+        self._friday_glow_state = state
+        self._friday_glow_is_error = bool(is_error)
+        _update_active_panel_glow(self)
 
     def _set_geometry_firmly(self, x, y, w, h):
         geom = f"{int(w)}x{int(h)}+{int(x)}+{int(y)}"

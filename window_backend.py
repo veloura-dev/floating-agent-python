@@ -572,3 +572,8 @@ class _PanelHostBridge:
             raise box["exc"]
         return box.get("result")
 
+    def post(self, fn):
+        if threading.current_thread() is self._owner_thread:
+            fn()
+            return
+        self._root.after(0, fn)

@@ -565,15 +565,14 @@ Text Generation) extra model capacity of their own.
 (they just show a reminder to ask Friday instead) — Friday is the one driving
 this window, so only Friday's own "close agent mode" can close it.
 
-**The IDE is Friday, not a separate app.** This isn't two programs that happen
-to talk to each other over a socket — the IDE (`ide/ide.py`, Tkinter) runs
-in the exact same process as the floating circle and its AI brain
-(`agent_overlay.py`, Qt), sharing one thread: Qt drives the real event
-loop, and a lightweight timer ticks the IDE's own Tk event loop alongside
-it. Because of that, quitting Friday — by right-clicking the circle and
-choosing Quit, or even a hard process kill — takes the IDE down with it
-automatically. There's no second process it could ever leave orphaned
-behind, and no window Friday opens can outlive Friday itself.
+**The IDE is Friday, not a separate app.** This isn't two programs that
+happen to talk to each other over a socket — the IDE (`ide/ide.py`, Tkinter)
+runs in the same process as the floating circle and its AI brain
+(`agent_overlay.py`, Qt), but on its own dedicated Tk thread. Qt owns the
+main UI thread; a separate Tk host thread owns native app panels such as
+Notepad and Settings. Thread-safe bridges marshal UI work to the correct
+event loop. Because all three UI systems live in the same process, quitting
+Friday takes them down together; there is no separate IDE process to orphan.
 
 - **Starts empty.** No project is opened automatically — just start asking
   for code and Friday creates a fresh workspace for you on the fly (mention
@@ -635,8 +634,9 @@ behind, and no window Friday opens can outlive Friday itself.
   via the general terminal tool. See `IDE_CAPABILITY_AUDIT.md` for the
   complete, code-verified list of everything Friday can and can't do in the
   IDE as of this build.
-- **Built entirely from Python's standard library** (Tkinter) — no new
-  pip packages, but Tkinter itself needs to be present:
+- **Native Tkinter editor with CustomTkinter chrome and panel surfaces** —
+  CustomTkinter is declared in `requirements.txt`; Tkinter itself still
+  needs to be present:
 
   | OS | Command |
   |---|---|
@@ -907,4 +907,3 @@ you use and **how it's tuned**:
   dedicated offline wake-word engine (e.g. Picovoice Porcupine) could
   replace the current "listen for a phrase, then check if it contained
   the wake word" approach with always-on local wake-word spotting.
-

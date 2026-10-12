@@ -109,7 +109,10 @@ def main():
           "hardcoded)",
           all(hasattr(ov, n) for n in (
               "WHISPER_MODEL_SIZE", "WHISPER_DEVICE", "WHISPER_COMPUTE_TYPE",
-              "WHISPER_BEAM_SIZE")))
+              "WHISPER_BEAM_SIZE", "WHISPER_INITIAL_PROMPT")))
+    check("wake-word listening ends on a shorter silence than command capture",
+          ov.WAKE_PAUSE_THRESHOLD_SECONDS
+          < ov.COMMAND_PAUSE_THRESHOLD_SECONDS)
 
     # ---------------- _transcribe_locally() -----------------------------
     audio = _make_audio_data()
@@ -133,9 +136,11 @@ def main():
     check("_transcribe_locally() joins and strips multi-segment output",
           text == "Turn on the kitchen lights please.")
     check("_transcribe_locally() passes beam_size/language through to "
-          "the model (uses the configured WHISPER_BEAM_SIZE)",
+          "the model (uses the configured beam and Friday-focused prompt)",
           captured["kwargs"].get("beam_size") == ov.WHISPER_BEAM_SIZE
-          and captured["kwargs"].get("language") == "en")
+          and captured["kwargs"].get("language") == "en"
+          and captured["kwargs"].get("initial_prompt")
+          == ov.WHISPER_INITIAL_PROMPT)
 
     import numpy as np
     samples = captured["samples"]

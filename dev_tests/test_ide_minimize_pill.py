@@ -110,6 +110,18 @@ def main():
               abs(pill_y - bottom_y) <= 3)
         check("pill shape is a real polygon item on its own canvas",
               pill._pill_shape in pill.canvas.find_all())
+        check("pill uses compact dimensions",
+              pill.PILL_W <= 112 and pill.PILL_H <= 26)
+        check("stacked pill windows have a clear gap",
+              pill.STACK_STEP > pill.LINE_LEN + pill.PILL_H + 4)
+        check("pill includes a visible status indicator and restore affordance",
+              pill._pill_status_dot in pill.canvas.find_all() and
+              pill._pill_action in pill.canvas.find_all())
+        pill.set_status("waiting")
+        check("pill status is shown on its indicator",
+              pill.canvas.itemcget(pill._pill_status_dot, "fill") ==
+              ide_mod.C["warn"])
+        pill.set_status("normal")
 
     # 4. Calling minimize again while already minimized is a safe no-op
     # (never two pills at once).
@@ -144,8 +156,10 @@ def main():
 
     # 6. Click -> restores the window to exactly its pre-minimize geometry.
     if pill is not None:
-        pill._on_click()
+        click_result = pill._on_click()
         pump(app)
+        check("pill click is consumed so it cannot trigger another pill",
+              click_result == "break")
         check("pill is gone after clicking it", getattr(app, "_pill", None) is None)
         check("clicked pill window itself was destroyed", not alive(pill))
         check("main window viewable again after restoring",

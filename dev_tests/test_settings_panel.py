@@ -362,6 +362,9 @@ def part_c():
 
         mgr = ap.AppPanelManager(launcher=FakeLauncher(), agent_host=_StubAgentHost())
 
+        mgr._ensure_host()
+        global_wheel_binding = mgr._bridge.call(
+            lambda: str(mgr._root.tk.call("bind", "all", "<MouseWheel>")))
         msg = mgr.open("settings")
         check("open('settings') succeeds", "Opened Settings" in msg)
         rec = mgr._panels["settings"]
@@ -374,6 +377,17 @@ def part_c():
               "notepad" not in mgr.list_panels().lower())
 
         panel = rec["frame"]
+        first_section = panel._body.winfo_children()[0]
+        check("settings scrolling is bound inside its content, not globally",
+              mgr._bridge.call(
+                  lambda: bool(panel._body._canvas.bind("<MouseWheel>"))))
+        check("settings scrolling is also bound to rendered sections",
+              mgr._bridge.call(
+                  lambda: bool(first_section._canvas.bind("<MouseWheel>"))))
+        check("opening Settings leaves other windows' global wheel binding alone",
+              mgr._bridge.call(
+                  lambda: str(mgr._root.tk.call("bind", "all", "<MouseWheel>")))
+              == global_wheel_binding)
         check("the real SettingsPanel has one row per seeded model "
               "(3 Voice + 3 Thinking + 1 Audio + 1 Research + 2 Embedding + "
               "1 Transcription; Planning starts empty)",
@@ -392,7 +406,8 @@ def part_c():
         widgets = panel._row_widgets[("Thinking", "gemini")]
         check("a successful check turns the status label green with a checkmark",
               "\u2713" in widgets["status_lbl"].cget("text") and
-              str(widgets["status_lbl"].cget("fg")) == str(sp.C["success"]))
+              str(widgets["status_lbl"].cget("text_color")) ==
+              str(sp.C["success"]))
         check("...and the status text says Connected",
               "Connected" in widgets["status_lbl"].cget("text"))
 
@@ -451,28 +466,18 @@ def part_c():
             broken_panel = mgr._bridge.call(_build_broken)
             check("a broken settings_store.load() doesn't raise out of "
                   "SettingsPanel.__init__", True)
+            import customtkinter as ctk
             body_text = " ".join(
                 w.cget("text") for w in broken_panel._body.winfo_children()
-                if "text" in w.keys())
+                if isinstance(w, ctk.CTkLabel))
             check("...and shows the real error message in the panel instead "
                   "of a silently blank one",
                   "disk is on fire" in body_text)
             check("...with zero model rows (nothing half-rendered)",
                   len(broken_panel._row_widgets) == 0)
 
-            def _find_close_button(widget):
-                for child in widget.winfo_children():
-                    if child.winfo_class() == "Label" and child.cget("text") == "\u2715":
-                        return child
-                    found = _find_close_button(child)
-                    if found is not None:
-                        return found
-                return None
-
             def _click_close():
-                btn = _find_close_button(broken_panel)
-                if btn is not None:
-                    btn.event_generate("<Button-1>")
+                broken_panel._close_btn.invoke()
 
             mgr._bridge.call(_click_close)
             check("the error panel's own titlebar close button really is "

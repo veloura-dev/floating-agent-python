@@ -106,7 +106,10 @@ def run_circle_overlay_checks():
 
         circle._state = ov.STATE_IDLE
         circle._last_was_error = False
-        circle._push_ide_status()
+        with mock.patch.object(agent_tools, "report_friday_status") as report_status:
+            circle._push_ide_status()
+        check("_push_ide_status also reports the circle state for the active app panel",
+              report_status.call_args.args == (ov.STATE_IDLE, False))
         check("_push_ide_status reflects a later state change too",
               fake_ide.calls[-1] == (ov.STATE_IDLE, False))
     finally:
@@ -115,6 +118,12 @@ def run_circle_overlay_checks():
     # No IDE open -> nothing to call, no crash.
     circle._push_ide_status()
     check("_push_ide_status is a safe no-op with no IDE open", True)
+
+    circle._anim_timer.stop()
+    circle._command_timeout_timer.stop()
+    circle.close()
+    circle.deleteLater()
+    app.processEvents()
 
 
 def run_ide_glow_checks():
@@ -152,6 +161,79 @@ def run_ide_glow_checks():
     sys.modules.pop("ide", None)
 
 
+def run_app_panel_glow_checks():
+    import tkinter as tk
+    import app_panels
+
+    root = tk.Tk()
+    root.withdraw()
+    panel = app_panels.EmbeddedAppPanel(
+        root, "Test", on_minimize=lambda: None, on_close=lambda: None)
+    panel.set_active_panel(True)
+
+    colors = {"listening": "#3b82f6", "loading": "#3b82f6",
+              "success": "#2ecc71", "error": "#e74c3c"}
+    states = [
+        ("listening", False, colors["listening"]),
+        ("loading", False, colors["loading"]),
+        ("responding", False, colors["success"]),
+        ("responding", True, colors["error"]),
+    ]
+    for state, is_error, expected in states:
+        panel.set_friday_status(state, is_error)
+        check(f"active app-panel border mirrors Friday's {state}"
+              f"{' error' if is_error else ''} color",
+              panel.cget("bg") == expected and not panel._active_glow.running)
+
+    panel.set_active_panel(False)
+    check("inactive app-panel border returns to its neutral color",
+          panel.cget("bg") == app_panels.C["border_hi"])
+    panel.set_active_panel(True)
+    check("re-activating a panel restores the last Friday status",
+          panel.cget("bg") == colors["error"] and not panel._active_glow.running)
+    panel.set_friday_status("idle")
+    check("active idle panel resumes its normal accent pulse",
+          panel._active_glow.running)
+
+    class ImmediateBridge:
+        @staticmethod
+        def post(callback):
+            callback()
+
+    import agent_tools
+    manager = object.__new__(app_panels.AppPanelManager)
+    manager._panels = {"test": {"frame": panel, "minimized": False}}
+    manager._bridge = ImmediateBridge()
+    original_manager = agent_tools._panel_manager
+    original_active_key = agent_tools._maximized_panel_key
+    original_friday_status = agent_tools.get_friday_status()
+    agent_tools._panel_manager = manager
+    agent_tools._maximized_panel_key = "test"
+    try:
+        agent_tools.report_friday_status("responding", True)
+        check("circle state is routed to the currently maximized app panel",
+              panel.cget("bg") == colors["error"])
+    finally:
+        agent_tools._panel_manager = original_manager
+        agent_tools._maximized_panel_key = original_active_key
+        agent_tools._friday_status = original_friday_status
+
+    panel._active_glow.stop()
+    panel.destroy()
+    root.update_idletasks()
+    root.destroy()
+
+    import notepad_panel
+    import settings_panel
+    import conversation_panels
+    for panel_class in (
+            notepad_panel.CustomNotepadPanel, settings_panel.SettingsPanel,
+            conversation_panels.ChatPanel, conversation_panels.ProfilePanel,
+            conversation_panels.ImageGenPanel, conversation_panels.VideoGenPanel):
+        check(f"{panel_class.__name__} exposes Friday state border updates",
+              callable(getattr(panel_class, "set_friday_status", None)))
+
+
 def run_standalone_has_no_glow_ring():
     import ide as ide_mod
     app = ide_mod.IDEApp(None, agent_controlled=False)
@@ -168,6 +250,7 @@ def run_standalone_has_no_glow_ring():
 def main():
     run_circle_overlay_checks()
     run_ide_glow_checks()
+    run_app_panel_glow_checks()
     run_standalone_has_no_glow_ring()
     n_fail = sum(1 for _, ok in CHECKS if not ok)
     print(f"\n{len(CHECKS) - n_fail}/{len(CHECKS)} checks passed")

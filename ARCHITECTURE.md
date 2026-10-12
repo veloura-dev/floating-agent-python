@@ -400,8 +400,13 @@ Friday owns two kinds of on-screen panel, unified under one shared rule:
   for why), a real OS window reparented into a Friday-drawn frame
   (Calculator, `EMBEDDABLE_APPS`), and fully-native panels with no real
   OS process behind them at all (Notepad, Settings — `CUSTOM_PANEL_APPS`,
-  each one's own `tk.Toplevel` subclass in its own file — see
-  `notepad_panel.py`/`settings_panel.py`).
+  each one's own Tk `Toplevel` subclass with CustomTkinter chrome and
+  controls in its own file — see `notepad_panel.py`/`settings_panel.py`).
+  Keeping the top-level native Tk preserves the exact geometry and window
+  handle behavior expected by the panel manager and embedded-app host.
+  Panel chrome and controls use CustomTkinter; Tk-native text editors,
+  scroll canvases, and the embedded native-window host remain Tk widgets
+  where their underlying Tk behavior is required.
 
 Conceptually, the IDE, Notepad, and Settings are all **Friday's own
 custom work surfaces** — tools Friday itself reaches for to get things
@@ -486,7 +491,8 @@ the same split memory.py's own docs/code follow:
   or automatically once right after a model is added), never silently
   in the background on every panel open, to avoid burning API quota
   nobody asked to spend.
-- **`settings_panel.py`** — the `SettingsPanel(tk.Toplevel)` widget
+- **`settings_panel.py`** — the `SettingsPanel(tk.Toplevel)` widget with
+  CustomTkinter chrome and form controls
   itself, built the same way `notepad_panel.py`'s `CustomNotepadPanel`
   is (same titlebar chrome, same `EmbeddedAppPanel`-shared layout
   constants/`_corner_position` helper, same `ide.py` color palette/
@@ -549,7 +555,7 @@ background until some interaction forces a repaint.
 ### The IDE
 | File | Role |
 |---|---|
-| `ide/ide.py` | Friday's own code editor, built entirely on Python's standard-library Tkinter (no third-party UI deps). File explorer, tabbed editor, integrated terminal, git panel, themes, minimize-to-pill, activity bar, chat overlay. ~7,850 lines — still the single largest file in the project even after splitting out `media_codecs.py` below. |
+| `ide/ide.py` | Friday's own code editor, using native Tkinter for the editor, OS-facing controls, and window geometry, with CustomTkinter chrome across its activity/sidebar/editor/terminal/status/chat surfaces. File explorer, tabbed editor, integrated terminal, git panel, themes, minimize-to-pill, activity bar, chat overlay. ~7,850 lines — still the single largest file in the project even after splitting out `media_codecs.py` below. |
 | `ide/media_codecs.py` | Split out of `ide.py` to keep that file a manageable size: the pure-Python BMP/TGA/JPEG decoders and the PDF page-render/metadata/text-extraction helpers the Explorer's file-preview pane uses when Tk's native PNG/GIF/PPM decoding and any optionally-installed Pillow/external converter both fall short. Fully self-contained (stdlib only); `ide.py` re-exports every name (`decode_bmp`, `decode_jpeg`, `load_image`, `pdf_render_page`, `IMAGE_EXTS`, ...) under its original spelling. |
 | `ide/WALKTHROUGH.md` | A guided tour of the IDE's own UI/features, written for a human reading the code or using the app. |
 | `ide/tests/` | The IDE's own internal regression suite (`run_all.py` plus feature-specific test modules) — 213 checks, independent of `dev_tests/` below. |

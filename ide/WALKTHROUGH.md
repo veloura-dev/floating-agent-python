@@ -1,9 +1,10 @@
 # IDE — Walkthrough & Evaluation
 
-A single-file code editor in pure Python (Tkinter). No third-party packages.
+A single-file code editor using native Tkinter editor controls with
+CustomTkinter chrome and panel surfaces.
 
 - **File:** `ide.py` (~2,900 lines)
-- **Requires:** Python 3.8+ with Tkinter
+- **Requires:** Python 3.8+ with Tkinter and the project's CustomTkinter dependency
 - **Recommended:** JetBrains Mono font (falls back gracefully)
 
 ---

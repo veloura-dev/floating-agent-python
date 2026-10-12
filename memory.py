@@ -203,20 +203,33 @@ def _lock_down_windows(path):
     user = os.environ.get("USERNAME") or os.environ.get("USER") or ""
     if not user:
         return
+    is_dir = os.path.isdir(path)
+    grant = f"{user}:(OI)(CI)F" if is_dir else f"{user}:F"
+
+    def _is_accessible():
+        try:
+            if is_dir:
+                with os.scandir(path):
+                    return True
+            with open(path, "rb"):
+                return True
+        except OSError:
+            return False
+
     try:
-        grant = subprocess.run(
-            ["icacls", path, "/grant:r", f"{user}:(OI)(CI)F"],
+        grant_result = subprocess.run(
+            ["icacls", path, "/grant:r", grant],
             capture_output=True, timeout=5, check=False,
         )
-        if grant.returncode != 0:
+        if grant_result.returncode != 0:
             return  # couldn't even confirm the grant -- leave inheritance alone
-        if not os.access(path, os.R_OK):
+        if not _is_accessible():
             return  # already can't read it -- don't make things worse
         subprocess.run(
             ["icacls", path, "/inheritance:r"],
             capture_output=True, timeout=5, check=False,
         )
-        if not os.access(path, os.R_OK):
+        if not _is_accessible():
             # Stripping inheritance somehow still broke access despite
             # the confirmed grant above -- immediately undo it rather
             # than leaving this file locked out of its own owner.

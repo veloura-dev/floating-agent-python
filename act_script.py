@@ -608,10 +608,14 @@ Rough steps:
 {steps}
 
 For EACH step, write a literal shell command that mechanically proves \
-that step's real work actually happened -- e.g. `grep -c "def foo" \
-file.py`, `test -f path/to/file.py && echo OK`, `python3 -m py_compile \
-file.py`. A command that passes on a no-op is not acceptable. If you \
-truly cannot construct a meaningful check, use exactly: true
+that step's real work actually happened -- e.g. `python -c "from pathlib \
+import Path; assert Path('file.py').is_file()"` or `python -m py_compile \
+file.py`. \
+The verifier runs through the host shell (Windows cmd.exe on Windows, \
+POSIX shell elsewhere). Prefer Python-based file checks for portability; \
+do not use POSIX-only commands such as grep or test on Windows. A command \
+that passes on a no-op is not acceptable. If you truly cannot construct \
+a meaningful check, use exactly: true
 
 Respond with ONLY a JSON object, no prose before or after:
 {{"steps": [{{"description": "...", "file_hint": "relative/path.ext", \

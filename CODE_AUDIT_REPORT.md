@@ -3,6 +3,11 @@
 **Scope:** 75 shipped files / ~26,300 lines of application code (39,786 including the 28-file, 1,410-check test suite)
 **Method:** Structured static audit (TODO/FIXME/scaffold-marker search, AST-based circular-import graph, doc-vs-code cross-check, line-by-line trace of every animation/worker-thread dispatch path) + full regression suite execution.
 
+> Follow-up note: this is the original audit snapshot. Its flagged threading
+> and import findings were resolved afterward, and focused regressions exposed
+> and fixed two additional UI/storage defects. See §10 for the current
+> follow-up results; the 1,410-check count below is the original baseline.
+
 ---
 
 ## 1. Headline numbers
@@ -105,9 +110,12 @@ No other acknowledged gaps were found in the text-search pass across all `*.py` 
 
 ---
 
-## 7. Test suite detail (the hardest completion signal available)
+## 7. Historical test-suite snapshot
 
-28 files, 1,410 checks, **100% passing** as of this report:
+This table records the earlier audit snapshot only. Its counts and pass
+claim are superseded by the final revalidation in section 10; in
+particular, the browser row predates the explicit Chromium availability
+check.
 
 | File | Checks |
 |---|---|
@@ -140,18 +148,81 @@ No other acknowledged gaps were found in the text-search pass across all `*.py` 
 | test_tool_loop_iteration_limit.py | 15/15 |
 | test_window_management_overhaul.py | 138/138 |
 
-*\*One check in this file (an "open in browser" check) only fails in this particular sandbox because no real browser binary is installed here — it isn't a code defect and would pass on a real desktop with any browser installed.*
+*\*At the time of this historical snapshot, a live browser check failed
+because no browser binary was installed. Section 10 records the current
+test behavior and validation limit.*
 
 ---
 
-## 8. Percentage of work done: ~95%
+## 8. Completion status
 
-Everything originally scoped is built, wired, and passing its own tests: the voice-activated floating circle, encrypted local memory, Act Script's Sequential Rotation / Fan-Out / Debate patterns with the reviewer≠producer rule, the full coding IDE, browser automation tools, the Settings panel with genuinely-wired per-region model routing, and Google Calendar integration. The remaining ~5% gap is the two explicitly-labeled, not-yet-built capabilities (Image/Video Generation real calls) plus the one open documentation question above (Qt/Tk threading description) that needs a decision, not more coding.
+The audit found and fixed the issues listed below, but the repository is
+not feature-complete: real image/video generation, persistent profile
+editing, and a standalone Chat backend remain unimplemented. Browser
+automation is implemented, but its live Chromium tests could not run in
+this environment because the Playwright Chromium executable is absent.
+These facts do not support a universal completion percentage or a claim
+of "100% efficiency."
 
 ---
 
-## 9. Open decisions for you
+## 9. Open decisions at the original snapshot
 
-1. Want me to fully trace `_TkThreadBridge` and correct the README's Qt/Tk threading description (§3.3)?
-2. Want the circular-import foot-gun (§4) actually restructured (e.g. lazy imports inside functions instead of module-scope), even though it doesn't affect the real running app?
-3. Any interest in starting real Image/Video Generation wiring, or is that explicitly out of scope for now?
+These questions were open when this snapshot was written. Their current
+status is recorded below.
+
+---
+
+## 10. Follow-up findings and verification
+
+### Resolved findings
+
+- **Qt/Tk threading documentation:** traced the IDE's dedicated Tk worker
+  loop and the separate app-panel Tk host. Corrected `README.md` to describe
+  those two Tk threads alongside Qt's main UI thread.
+- **Panel import cycle:** moved shared sizing/placement helpers into
+  `panel_ui.py`. `settings_panel`, `notepad_panel`, `conversation_panels`,
+  and `app_panels` now each import successfully in a fresh process.
+- **Settings file ACLs on Windows:** reproduced a saved settings file
+  becoming unreadable after lockdown. Directory-only `(OI)(CI)` inheritance
+  flags had been applied to individual files before inherited access was
+  removed. `_lock_down_windows()` now grants directory inheritance only to
+  directories, grants file access explicitly for files, and verifies access
+  by actually listing/opening the target before and after removing inheritance.
+- **Settings scrolling:** wheel bindings are scoped to the Settings canvas
+  and its content, rather than installed globally on all Tk windows.
+- **Conversation panel behavior and content:** empty states now name each
+  panel's actual capability boundary. Enter keeps the draft and explains
+  that nothing was sent; unavailable microphone/speaker controls do not
+  pretend to activate. The Profile panel's compact avatar keeps the input
+  bar visible at the tested 420×360 size.
+- **Preview and architecture docs:** the HTML concept reflects the explicit
+  not-connected states, and the README thread description matches the code.
+- **App-panel shutdown:** reproduced Tk `Variable.__del__` errors when an
+  open Notepad panel was left for interpreter shutdown. `AppPanelManager`
+  now destroys its host-owned widgets before stopping the Tk loop, and
+  `CustomNotepadPanel` releases its `StringVar` on the Tk-owning thread.
+- **Glow-test cleanup:** the test now stops its timers and closes/deletes
+  its Qt widget before application teardown; the process exits normally.
+- **Browser-test prerequisite:** the test checks whether Chromium can
+  actually launch and skips only the live-browser checks when its binary is
+  missing, instead of cascading into unrelated assertion/index errors.
+
+### Final verification
+
+| Check | Result |
+|---|---:|
+| All `dev_tests/test_*.py` scripts | **30/30 exited successfully** |
+| Checks reported by the suite | **1,600 passed** |
+| `dev_tests/test_app_panels.py` | **174/174**, no Tk teardown warnings |
+| `dev_tests/test_friday_glow.py` | **34/34**, clean process exit |
+| `dev_tests/test_settings_panel.py` | **75/75** |
+| `dev_tests/test_conversation_panels.py` | **179/179** |
+| Fresh-process imports of four panel modules | **4/4** |
+| Pylance diagnostics for changed Python files | **No errors** |
+
+The browser suite's six registration/no-session checks passed; its
+live-browser checks were **skipped** because
+`ms-playwright\chromium_headless_shell-1243\chrome-headless-shell.exe` is
+not installed here. Thus, the 1,600 passing checks do not verify live
+browser behavior in this environment.

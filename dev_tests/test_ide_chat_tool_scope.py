@@ -116,7 +116,8 @@ def main():
 
     # -- 4. the panel's one real entry point actually opts into this ----
     with open(os.path.join(os.path.dirname(os.path.dirname(
-            os.path.abspath(__file__))), "agent_overlay.py")) as f:
+            os.path.abspath(__file__))), "agent_overlay.py"),
+              encoding="utf-8") as f:
         overlay_src = f.read()
     m = re.search(r"worker\s*=\s*AIWorker\(text,\s*parent=None,\s*ide_scoped=True\)",
                    overlay_src)

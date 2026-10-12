@@ -10,12 +10,12 @@ end, mirroring dev_tests/test_settings_panel.py's Part C pattern:
   - each real Tk panel actually builds the exact bottom bar the user
     asked for: attach icon (left), a text entry (middle, expands), mic
     + speaker icons (right) -- not reordered, not merged;
-  - the entry's placeholder show/clear/restore behavior works;
+  - the entry's placeholder show/clear/restore behavior works and Enter
+    preserves drafts while explaining that no backend is connected;
   - the attach button opens a (mocked, no real dialog) file picker and
-    shows/removes a real chip; mic/speaker are cosmetic toggles only;
-  - Profile's extra placeholder-avatar body content renders; Image/
-    Video Generation show their honest "not wired up to a real model
-    yet" empty-state text.
+    shows/removes a real chip; mic/speaker report their unavailable
+    backends instead of toggling cosmetically;
+  - each panel shows honest, panel-specific empty-state content.
 
 Requires a real (Xvfb) Tk display, same DISPLAY=:99 requirement as
 dev_tests/test_app_panels.py and test_settings_panel.py's Part C.
@@ -80,6 +80,8 @@ def part_a():
 def part_b():
     print("\n--- Part B: AppPanelManager open/minimize/restore/close ---")
     import app_panels as ap
+    import customtkinter as ctk
+    import tkinter as tk
 
     class FakeLauncher:
         def launch(self, *a, **k):
@@ -121,6 +123,9 @@ def part_b():
                   label.lower() in listing and "notepad" not in listing)
 
             panel = rec["frame"]
+            check(f"{key!r} uses CustomTkinter chrome on a native Tk panel",
+                  isinstance(panel, tk.Toplevel) and
+                  isinstance(panel._titlebar, ctk.CTkFrame))
             check(f"{key!r} panel has the real attach/mic/speaker icon buttons",
                   hasattr(panel, "_attach_btn") and hasattr(panel, "_mic_btn") and
                   hasattr(panel, "_speaker_btn"))
@@ -164,15 +169,14 @@ def part_c():
                 corner_index=0, bounds=(0, 0, 420, 360))
 
         for cls, title, empty_text, placeholder in (
-            (cpm.ChatPanel, "Chat", "No messages yet", "Type a message..."),
-            (cpm.ProfilePanel, "Profile", "No profile info yet.",
-             "Tell Friday something about yourself..."),
-            (cpm.ImageGenPanel, "Image Generation",
-             "isn't wired up to a real model yet",
-             "Describe the image you want to generate..."),
-            (cpm.VideoGenPanel, "Video Generation",
-             "isn't wired up to a real model yet",
-             "Describe the video you want to generate..."),
+            (cpm.ChatPanel, "Chat", "messaging isn't connected",
+             "Draft a message..."),
+            (cpm.ProfilePanel, "Profile", "not connected",
+             "Profile editing is not available yet..."),
+            (cpm.ImageGenPanel, "Image Generation", "not connected",
+             "Draft an image prompt (generation unavailable)..."),
+            (cpm.VideoGenPanel, "Video Generation", "not connected",
+             "Draft a video prompt (generation unavailable)..."),
         ):
             panel = make(cls)
             root.update_idletasks()
@@ -180,7 +184,8 @@ def part_c():
 
             check(f"{title} panel title is correct", panel.title() == title)
             check(f"{title} panel shows its expected empty-state text",
-                  empty_text in panel.EMPTY_STATE_TEXT)
+                  empty_text in
+                  f"{panel.EMPTY_STATE_TITLE} {panel.EMPTY_STATE_TEXT}".lower())
 
             # -- the 3 icon buttons really exist and are _IconButton canvases --
             check(f"{title}: attach button exists and is a real Canvas widget",
@@ -226,13 +231,14 @@ def part_c():
             check(f"{title}: blurring an empty entry restores the placeholder",
                   panel.entry.get() == placeholder and panel._showing_placeholder)
 
-            # -- Enter just resets, never fabricates a reply/generation --
+            # -- Enter retains text and reports the missing backend --
             panel._clear_placeholder()
             panel.entry.insert(0, "something typed")
             panel._on_entry_submit()
-            check(f"{title}: pressing Enter resets the box back to its "
-                  f"placeholder (no fake reply/generation is fabricated)",
-                  panel.entry.get() == placeholder)
+            check(f"{title}: pressing Enter preserves the draft",
+                  panel.entry.get() == "something typed")
+            check(f"{title}: pressing Enter explains why nothing was sent",
+                  panel._notice_label.cget("text") == panel.SUBMIT_NOTICE)
 
             # -- attach: mock the real file dialog, verify a real chip
             #    appears and can be removed --
@@ -248,6 +254,9 @@ def part_c():
                 check(f"{title}: a real attach chip widget is shown",
                       panel._attach_chip is not None and
                       panel._attach_chip.winfo_exists())
+                panel._on_entry_submit()
+                check(f"{title}: unavailable submit preserves its attachment",
+                      panel._attached_path == fake_path)
                 panel._clear_attachment()
                 check(f"{title}: clearing the attachment removes the chip "
                       f"and resets the path",
@@ -264,38 +273,93 @@ def part_c():
             finally:
                 cpm.filedialog.askopenfilename = orig_dialog
 
-            # -- mic/speaker: cosmetic toggle only, independent of each other --
+            # -- unavailable mic/speaker controls give clear feedback --
             check(f"{title}: mic starts inactive", panel._mic_btn._active is False)
             panel._on_mic_click()
-            check(f"{title}: clicking mic toggles it active",
-                  panel._mic_btn._active is True)
-            check(f"{title}: speaker is unaffected by the mic toggle",
+            check(f"{title}: mic explains that voice input is unavailable",
+                  "not connected" in panel._notice_label.cget("text").lower())
+            check(f"{title}: mic does not imply an active recording",
                   panel._speaker_btn._active is False)
             panel._on_speaker_click()
-            check(f"{title}: clicking speaker toggles it active independently",
-                  panel._speaker_btn._active is True)
+            check(f"{title}: speaker explains that speech output is unavailable",
+                  "not connected" in panel._notice_label.cget("text").lower())
+
+            if cls is cpm.ChatPanel:
+                check("Chat uses the supplied near-black page background",
+                      panel._body.cget("fg_color") == "#0F0F11")
+                check("Chat uses a layered charcoal conversation card",
+                      panel._chat_card.cget("fg_color") == "#1A1A1F")
+                check("Chat composer uses the layered card surface",
+                      panel._composer_frame.cget("fg_color") == "#1A1A1F")
+                check("Chat composer uses a subtle border and rounded corners",
+                      panel._composer_frame.cget("border_color") == "#2E2E36" and
+                      panel._composer_frame.cget("corner_radius") == 12)
+                check("Chat header uses the card surface and a preview badge",
+                      panel._connection_badge.cget("text") == "PREVIEW" and
+                      panel._connection_badge.cget("fg_color") == "#242429")
+                check("Chat empty state is centered with a minimal brand mark",
+                      panel._brand_mark.cget("fg_color") == "#242429" and
+                      panel.EMPTY_STATE_TITLE == "A quieter space to think.")
+                check("Chat entry uses the card surface and restrained typography",
+                      panel.entry.cget("fg_color") == "#1A1A1F" and
+                      panel.entry.cget("border_color") == "#1A1A1F" and
+                      panel.entry.cget("height") == 40 and
+                      panel.entry.cget("font")[0] == "Segoe UI" and
+                      panel.entry.cget("font")[1] == 10)
+                check("Chat Send button uses a compact dark default with red hover",
+                      panel._send_btn.cget("fg_color") == "#303036" and
+                      panel._send_btn.cget("hover_color") == "#E03E48" and
+                      panel._send_btn.cget("width") == 64 and
+                      panel._send_btn.cget("height") == 32 and
+                      panel._send_btn.cget("font")[0] == "Segoe UI" and
+                      panel._send_btn.cget("font")[1] == 9)
+
+                panel._clear_placeholder()
+                panel.entry.delete(0, "end")
+                panel.entry.insert(0, "send button draft")
+                panel._send_btn.invoke()
+                check("Chat Send preserves its draft when no backend is connected",
+                      panel.entry.get() == "send button draft")
+                check("Chat Send explains that the message was not sent",
+                      panel._notice_label.cget("text") == panel.SUBMIT_NOTICE)
+
+                panel.geometry("420x300+0+0")
+                root.update_idletasks()
+                root.update()
+                check("Chat composer remains usable at a shorter panel size",
+                      panel.entry.winfo_width() > 0 and
+                      panel._send_btn.winfo_width() > 0 and
+                      panel._send_btn.winfo_rootx() +
+                      panel._send_btn.winfo_width() <=
+                      panel.winfo_rootx() + panel.winfo_width())
 
             # -- titlebar minimize/close callbacks really fire --
             before_min = minimized["n"]
-            panel._min_btn.event_generate("<Button-1>")
+            panel._min_btn.invoke()
             root.update_idletasks()
             check(f"{title}: titlebar minimize button really calls on_minimize",
                   minimized["n"] == before_min + 1)
             before_close = closed["n"]
-            panel._close_btn.event_generate("<Button-1>")
+            panel._close_btn.invoke()
             root.update_idletasks()
             check(f"{title}: titlebar close button really calls on_close",
                   closed["n"] == before_close + 1)
 
             panel.destroy()
+            root.update()
 
-        # -- Profile's extra body content (placeholder avatar + "You" label) --
+        # -- Profile's extra body content (compact placeholder avatar) --
         profile = make(cpm.ProfilePanel)
         root.update_idletasks()
-        labels = [w.cget("text") for w in profile._body.winfo_children()
-                  if w.winfo_class() == "Label"]
-        check("Profile panel shows a 'You' label above the empty-state message",
-              "You" in labels)
+        import customtkinter as ctk
+        state_labels = [
+            w.cget("text")
+            for child in profile._body.winfo_children()
+            for w in child.winfo_children()
+            if isinstance(w, ctk.CTkLabel)
+        ]
+        check("Profile panel presents a clear 'Your profile' empty-state title",
+              "Your profile" in state_labels)
         canvases = [w for w in profile._body.winfo_children()
                     if isinstance(w, tk.Canvas)]
         check("Profile panel draws a placeholder avatar canvas",
